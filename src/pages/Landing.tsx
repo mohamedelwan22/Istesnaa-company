@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
     Search, PenTool, MapPin, CheckCircle,
     Loader2, Phone, Mail, Globe, Shield, Zap, Target,
-    ArrowLeft, MessageSquare, ExternalLink, Info, Star, Package, FileText
+    ArrowLeft, MessageSquare, Info, Star, Package, FileText
 } from 'lucide-react';
 import { findTopFactories } from '../services/MatchingService';
 import { FeedbackService } from '../services/FeedbackService';
