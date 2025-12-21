@@ -219,7 +219,7 @@ export const FactoriesPage = () => {
             </div>
 
             {/* Search and Batch Actions */}
-            <div className="flex gap-3 items-center">
+            <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
                     <input
                         type="text"
@@ -231,26 +231,29 @@ export const FactoriesPage = () => {
                     <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
                 </div>
 
-                {batchOptions.length > 0 && (
-                    <select
-                        onChange={(e) => e.target.value && setDeletingBatchId(e.target.value)}
-                        className="px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
-                        value=""
-                    >
-                        <option value="">مسح مجموعة...</option>
-                        {batchOptions.map(batch => (
-                            <option key={batch.id} value={batch.id}>{batch.name}</option>
-                        ))}
-                    </select>
-                )}
+                <div className="flex gap-3 w-full sm:w-auto">
+                    {batchOptions.length > 0 && (
+                        <select
+                            onChange={(e) => e.target.value && setDeletingBatchId(e.target.value)}
+                            className="flex-1 sm:flex-none px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                            value=""
+                        >
+                            <option value="">مسح مجموعة...</option>
+                            {batchOptions.map(batch => (
+                                <option key={batch.id} value={batch.id}>{batch.name}</option>
+                            ))}
+                        </select>
+                    )}
 
-                <button
-                    onClick={() => setShowDeleteAllDialog(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                >
-                    <Trash size={18} />
-                    مسح الكل
-                </button>
+                    <button
+                        onClick={() => setShowDeleteAllDialog(true)}
+                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                    >
+                        <Trash size={18} />
+                        <span className="sm:hidden md:inline">مسح الكل</span>
+                        <span className="hidden sm:inline md:hidden">مسح</span>
+                    </button>
+                </div>
             </div>
 
             {/* Factories List */}

@@ -207,10 +207,10 @@ export const Landing = () => {
                                 >
                                     الجيل القادم من تكنولوجيا التصنيع
                                 </motion.div>
-                                <h1 className="text-5xl md:text-6xl font-black text-primary leading-[1.15]">
+                                <h1 className="text-3xl md:text-5xl lg:text-6xl font-black text-primary leading-[1.2]">
                                     حول فكرتك إلى <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 to-primary">واقع ملموس</span>
                                 </h1>
-                                <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-bold">
+                                <p className="text-lg md:text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-bold">
                                     نحن نربط المبدعين بأفضل المصانع العالمية باستخدام خوارزميات مطابقة ذكية لضمان أعلى جودة بأفضل سعر.
                                 </p>
                             </div>
@@ -219,7 +219,7 @@ export const Landing = () => {
                             <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
                                 {/* Form */}
                                 <div className="lg:col-span-7 space-y-8">
-                                    <FloatingCard className="bg-white/80 backdrop-blur-2xl p-8 rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] border border-white/50 relative overflow-hidden">
+                                    <FloatingCard className="bg-white/80 backdrop-blur-2xl p-6 md:p-8 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] border border-white/50 relative overflow-hidden">
                                         <div className="relative z-10 space-y-8">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div className="space-y-2">
@@ -398,14 +398,14 @@ export const Landing = () => {
                                         animate={{ width: 60 }}
                                         className="h-1 bg-primary rounded-full mb-4"
                                     />
-                                    <h3 className="text-4xl font-black text-gray-900 leading-tight">
+                                    <h3 className="text-3xl md:text-4xl font-black text-gray-900 leading-tight">
                                         تم العثور على <span className="text-primary italic">نتائج مذهلة</span> لك
                                     </h3>
                                     <p className="text-gray-500 font-bold">بناءً على معايير الاختراع: {formData.name}</p>
                                 </div>
                                 <button
                                     onClick={() => setResults(null)}
-                                    className="flex items-center gap-2 px-8 py-4 bg-white border-2 border-primary text-primary rounded-2xl font-black hover:bg-primary hover:text-white transition-all shadow-lg hover:shadow-primary/20"
+                                    className="w-full md:w-auto flex items-center justify-center gap-2 px-8 py-4 bg-white border-2 border-primary text-primary rounded-2xl font-black hover:bg-primary hover:text-white transition-all shadow-lg hover:shadow-primary/20"
                                 >
                                     <ArrowLeft className="rotate-180" size={20} />
                                     إجراء بحث جديد
@@ -420,10 +420,10 @@ export const Landing = () => {
                                             animate={{ opacity: 1, y: 0 }}
                                             transition={{ delay: index * 0.15 }}
                                             key={factory.id}
-                                            className="group bg-white rounded-[3rem] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.08)] border border-gray-100 p-8 md:p-12 relative overflow-hidden hover:shadow-[0_50px_100px_-20px_rgba(0,0,0,0.12)] transition-all duration-500 hover:-translate-y-2"
+                                            className="group bg-white rounded-[2rem] md:rounded-[3rem] shadow-[0_40px_80px_-20px_rgba(0,0,0,0.08)] border border-gray-100 p-6 md:p-12 relative overflow-hidden hover:shadow-[0_50px_100px_-20px_rgba(0,0,0,0.12)] transition-all duration-500 hover:-translate-y-2"
                                         >
                                             {/* Rank Badge */}
-                                            <div className="absolute top-8 left-8 flex items-center gap-2 z-10">
+                                            <div className="absolute top-4 left-4 md:top-8 md:left-8 flex items-center gap-2 z-10">
                                                 <div className="w-14 h-14 bg-primary text-white rounded-2xl flex flex-col items-center justify-center shadow-lg shadow-primary/30">
                                                     <span className="text-[10px] uppercase font-black opacity-60">المركز</span>
                                                     <span className="text-2xl font-black">0{index + 1}</span>
