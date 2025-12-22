@@ -44,9 +44,9 @@ export const InventionsPage = () => {
     };
 
     const filteredInventions = inventions.filter(inv =>
-        inv.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inv.industry.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inv.description.toLowerCase().includes(searchTerm.toLowerCase())
+        (inv.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (inv.industry || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (inv.description || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (

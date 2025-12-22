@@ -63,9 +63,9 @@ export const FactoriesPage = () => {
     };
 
     const filteredFactories = factories.filter(f =>
-        f.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        f.industry?.some(i => i?.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        f.city?.toLowerCase().includes(searchTerm.toLowerCase())
+        (f.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (f.industry || []).some(i => (i || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (f.city || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     // Group factories by batch

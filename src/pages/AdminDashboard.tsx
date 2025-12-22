@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../components/AdminLayout';
 import { UploadPage, FactoriesPage, InventionsPage, EmailsPage, DeduplicationPage } from './admin';
 
@@ -8,6 +8,7 @@ import { Factory as FactoryIcon, Lightbulb, TrendingUp, History, Package, MapPin
 import { motion } from 'framer-motion';
 
 const DashboardHome = () => {
+    const navigate = useNavigate();
     const [stats, setStats] = useState({
         factories: 0,
         inventions: 0,
@@ -209,7 +210,7 @@ const DashboardHome = () => {
                             <h3 className="font-bold text-gray-800">أحدث عمليات التحليل</h3>
                         </div>
                         <button
-                            onClick={() => window.location.href = '/admin/dashboard/inventions'}
+                            onClick={() => navigate('/admin/dashboard/inventions')}
                             className="text-sm text-blue-600 hover:underline font-medium"
                         >
                             عرض الكل
@@ -350,7 +351,7 @@ const DashboardHome = () => {
                         </h4>
                         <p className="text-xs text-gray-400 mb-4">انتقل بسرعة لإدارة أي مصنع بالاسم</p>
                         <button
-                            onClick={() => window.location.href = '/admin/dashboard/factories'}
+                            onClick={() => navigate('/admin/dashboard/factories')}
                             className="w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition font-medium border border-white/5"
                         >
                             فتح صفحة البحث
