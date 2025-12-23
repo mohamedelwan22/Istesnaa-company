@@ -614,8 +614,8 @@ export const Landing = () => {
                                         <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6 text-gray-400">
                                             <Search size={40} />
                                         </div>
-                                        <h4 className="text-2xl font-black text-gray-800 mb-2">جاري تحديث قاعدة بيانات المصانع...</h4>
-                                        <p className="text-gray-500 font-bold mb-8">يبدو أن قاعدة البيانات فارغة حالياً. يرجى المحاولة لاحقاً بعد إضافة مصانع للنظام.</p>
+                                        <h4 className="text-2xl font-black text-gray-800 mb-2">لا توجد مصانع معتمدة للمطابقة</h4>
+                                        <p className="text-gray-500 font-bold mb-8">عذراً، لا يمكن إجراء التحليل لعدم وجود مصانع "معتمدة" في النظام حالياً. يرجى مراجعة لوحة الإدارة.</p>
                                         <button
                                             onClick={() => setResults(null)}
                                             className="px-10 py-4 bg-gray-800 text-white rounded-2xl font-black hover:bg-black transition-all"

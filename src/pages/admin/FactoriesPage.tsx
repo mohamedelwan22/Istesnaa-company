@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Search, Trash2, Edit, Plus, Trash, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Trash2, Edit, Plus, Trash, ChevronDown, ChevronUp, CheckCircle, ShieldCheck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import type { Factory } from '../../types';
 import { FactoryFormModal } from '../../components/FactoryFormModal';
@@ -337,6 +337,37 @@ export const FactoriesPage = () => {
                                                         <td className="p-4 text-sm text-gray-600">{factory.industry?.join(', ')}</td>
                                                         <td className="p-4 text-sm text-gray-600">{factory.country}</td>
                                                         <td className="p-4 flex gap-3">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (factory.approved) return;
+
+                                                                    // Optimistic update
+                                                                    const updatedFactory = { ...factory, approved: true };
+                                                                    setFactories(prev => prev.map(f =>
+                                                                        (f.id === factory.id || f.factory_code === factory.factory_code) ? updatedFactory : f
+                                                                    ));
+
+                                                                    // DB Update
+                                                                    supabase.from('factories')
+                                                                        .update({ approved: true })
+                                                                        .eq(factory.id ? 'id' : 'factory_code', factory.id || factory.factory_code)
+                                                                        .then(({ error }) => {
+                                                                            if (error) {
+                                                                                alert('فشل الاعتماد: ' + error.message);
+                                                                                // Revert on error
+                                                                                setFactories(prev => prev.map(f =>
+                                                                                    (f.id === factory.id || f.factory_code === factory.factory_code) ? factory : f
+                                                                                ));
+                                                                            }
+                                                                        });
+                                                                }}
+                                                                className={`transition-colors ${factory.approved ? 'text-green-600 cursor-default' : 'text-gray-400 hover:text-green-600'}`}
+                                                                title={factory.approved ? "تمت الموافقة" : "اعتماد المصنع"}
+                                                                disabled={!!factory.approved}
+                                                            >
+                                                                {factory.approved ? <CheckCircle size={18} fill="#dcfce7" /> : <ShieldCheck size={18} />}
+                                                            </button>
                                                             <button
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();

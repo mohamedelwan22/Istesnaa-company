@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS factories (
     capabilities TEXT,
     scale TEXT,
     notes TEXT,
+    approved BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 

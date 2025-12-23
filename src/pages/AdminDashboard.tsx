@@ -1,6 +1,6 @@
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../components/AdminLayout';
-import { UploadPage, FactoriesPage, InventionsPage, EmailsPage, DeduplicationPage } from './admin';
+import { UploadPage, FactoriesPage, InventionsPage, EmailsPage, DeduplicationPage, CompatibleFactoriesPage } from './admin';
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
@@ -370,6 +370,7 @@ export const AdminDashboard = () => {
                 <Route index element={<DashboardHome />} />
                 <Route path="upload" element={<UploadPage />} />
                 <Route path="factories" element={<FactoriesPage />} />
+                <Route path="approved" element={<CompatibleFactoriesPage />} />
                 <Route path="inventions" element={<InventionsPage />} />
                 <Route path="emails" element={<EmailsPage />} />
                 <Route path="deduplication" element={<DeduplicationPage />} />

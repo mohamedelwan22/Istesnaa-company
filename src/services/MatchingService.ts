@@ -81,7 +81,11 @@ export const findTopFactories = async (invention: Partial<Invention>): Promise<M
     let hasMore = true;
 
     while (hasMore) {
-        const { data, error } = await supabase.from('factories').select('*').range(from, to);
+        const { data, error } = await supabase
+            .from('factories')
+            .select('*')
+            .eq('approved', true)
+            .range(from, to);
         if (error) break;
         if (data && data.length > 0) {
             allFactories = [...allFactories, ...data];

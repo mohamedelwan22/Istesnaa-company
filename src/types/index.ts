@@ -14,6 +14,7 @@ export interface Factory {
     created_at?: string;
     batch_id?: string;
     batch_name?: string;
+    approved?: boolean;
 }
 
 export interface Invention {

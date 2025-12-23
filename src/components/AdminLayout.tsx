@@ -1,5 +1,5 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Upload, Users, LogOut, History, Mail, ShieldAlert, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Upload, Users, LogOut, History, Mail, ShieldAlert, Menu, X, CheckCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import { Footer } from './Footer';
@@ -32,6 +32,7 @@ export const AdminLayout = () => {
         { icon: History, label: 'سجل التحليلات', path: '/admin/dashboard/inventions' },
         { icon: Upload, label: 'رفع الملفات', path: '/admin/dashboard/upload' },
         { icon: Users, label: 'إدارة المصانع', path: '/admin/dashboard/factories' },
+        { icon: CheckCircle, label: 'المصانع المتوافقة', path: '/admin/dashboard/approved' },
         { icon: Mail, label: 'إدارة الإيميلات', path: '/admin/dashboard/emails' },
         { icon: ShieldAlert, label: 'تكرار البيانات', path: '/admin/dashboard/deduplication' },
     ];
