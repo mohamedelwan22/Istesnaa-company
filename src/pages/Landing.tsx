@@ -3,7 +3,7 @@ import {
     Search, PenTool, MapPin, CheckCircle,
     Loader2, Phone, Mail, Globe, Shield, Zap, Target,
     ArrowLeft, MessageSquare, Info, Star, FileText,
-    Upload, Trash2, Edit2, AlertCircle, File
+    Upload, Trash2, Edit2, AlertCircle
 } from 'lucide-react';
 import { findTopFactories, inferIndustry, extractSignals } from '../services/MatchingService';
 import { FeedbackService } from '../services/FeedbackService';
