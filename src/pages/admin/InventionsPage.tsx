@@ -57,7 +57,14 @@ export const InventionsPage = () => {
                         <History className="text-primary" />
                         سجل طلبات التحليل
                     </h2>
-                    <p className="text-gray-500 mt-1">عرض ومتابعة الاختراعات التي قام المستخدمون بتحليلها</p>
+                    <p className="text-gray-500 mt-2 font-medium max-w-2xl text-sm leading-relaxed">
+                        هذه الصفحة تعرض أرشيفاً كاملاً لجميع عمليات البحث والتحليل التي قام بها المبتكرون.
+                        يمكنك استخدام هذا السجل لفهم <span className="text-primary font-bold">التوجهات الصناعية الحالية</span>
+                        ومعرفة أي القطاعات هي الأكثر طلباً.
+                    </p>
+                    <div className="mt-4 flex gap-4 text-xs font-bold text-gray-400 bg-gray-50 p-3 rounded-lg border border-gray-100 w-fit">
+                        <span className="flex items-center gap-1"><Lightbulb size={14} className="text-yellow-500" /> تلميح: تكرار ظهور نفس المصانع في النتائج يعني أنها "شريك استراتيجي" محتمل.</span>
+                    </div>
                 </div>
             </div>
 

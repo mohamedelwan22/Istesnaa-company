@@ -274,9 +274,45 @@ export const FactoriesPage = () => {
                                         <h3 className="text-lg font-semibold text-gray-800">{batch.name}</h3>
                                         <p className="text-sm text-gray-600 mt-1">{batch.factories.length} مصنع</p>
                                     </div>
-                                    <div className="flex items-center gap-2 text-blue-600">
-                                        <span className="text-sm font-medium">{isExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}</span>
-                                        {isExpanded ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-1 ml-4" onClick={(e) => e.stopPropagation()}>
+                                            <button
+                                                onClick={() => {
+                                                    const newName = prompt('أدخل الاسم الجديد للمجموعة:', batch.name);
+                                                    if (newName && newName !== batch.name) {
+                                                        // Update batch name in DB for all factories in this batch
+                                                        supabase.from('factories')
+                                                            .update({ batch_name: newName })
+                                                            .eq('batch_id', batch.id)
+                                                            .then(({ error }) => {
+                                                                if (!error) {
+                                                                    setFactories(prev => prev.map(f =>
+                                                                        f.batch_id === batch.id ? { ...f, batch_name: newName } : f
+                                                                    ));
+                                                                } else {
+                                                                    alert('فشل التعديل: ' + error.message);
+                                                                }
+                                                            });
+                                                    }
+                                                }}
+                                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-full"
+                                                title="تعديل اسم المجموعة"
+                                            >
+                                                <Edit size={16} />
+                                            </button>
+                                            <button
+                                                onClick={() => setDeletingBatchId(batch.id)}
+                                                className="p-2 text-red-600 hover:bg-red-50 rounded-full"
+                                                title="حذف المجموعة بالكامل"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+
+                                        <div className="flex items-center gap-2 text-blue-600">
+                                            <span className="text-sm font-medium">{isExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}</span>
+                                            {isExpanded ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
+                                        </div>
                                     </div>
                                 </div>
 

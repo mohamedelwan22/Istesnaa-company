@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import {
     Search, PenTool, MapPin, CheckCircle,
     Loader2, Phone, Mail, Globe, Shield, Zap, Target,
-    ArrowLeft, MessageSquare, Info, Star, Package, FileText
+    ArrowLeft, MessageSquare, Info, Star, FileText,
+    Upload, Trash2, Edit2, AlertCircle, File
 } from 'lucide-react';
-import { findTopFactories } from '../services/MatchingService';
+import { findTopFactories, inferIndustry, extractSignals } from '../services/MatchingService';
 import { FeedbackService } from '../services/FeedbackService';
 import { supabase } from '../lib/supabase';
 import type { Invention } from '../types';
-import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Footer } from '../components/Footer';
 import { DocumentModal } from '../components/DocumentModal';
@@ -17,34 +18,10 @@ import clsx from 'clsx';
 // --- Components ---
 
 const FloatingCard = ({ children, className = "" }: { children: React.ReactNode, className?: string }) => {
-    // Standard Framer Motion 12 spring usage with MotionValue
-    const xVal = useMotionValue(0);
-    const yVal = useMotionValue(0);
-    const x = useSpring(xVal, { stiffness: 100, damping: 30 });
-    const y = useSpring(yVal, { stiffness: 100, damping: 30 });
-
-    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const centerX = rect.left + rect.width / 2;
-        const centerY = rect.top + rect.height / 2;
-        xVal.set((e.clientX - centerX) / 15);
-        yVal.set((e.clientY - centerY) / 15);
-    };
-
-    const handleMouseLeave = () => {
-        xVal.set(0);
-        yVal.set(0);
-    };
-
     return (
-        <motion.div
-            style={{ x, y, perspective: "1000px" }}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
-            className={className}
-        >
+        <div className={className}>
             {children}
-        </motion.div>
+        </div>
     );
 };
 
@@ -64,38 +41,20 @@ const FeatureIcon = ({ icon: Icon, title, desc, delay = 0 }: { icon: any, title:
     </motion.div>
 );
 
-const MovingBackground = () => (
+const MovingBackground = memo(() => (
     <div className="fixed inset-0 -z-10 overflow-hidden bg-background">
         {/* Soft Off-White Base */}
         <div className="absolute inset-0 bg-gradient-to-tr from-[#f0f4f8] via-background to-[#ffffff]" />
 
-        {/* 3D Animated Orbs with Navy/Primary Tones */}
-        <motion.div
-            animate={{
-                x: [0, 50, 0],
-                y: [0, -30, 0],
-                scale: [1, 1.1, 1],
-            }}
-            transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+        {/* Static Orbs with Navy/Primary Tones */}
+        <div
             className="absolute -top-[10%] -left-[10%] w-[60%] h-[60%] bg-primary/5 rounded-full blur-[100px]"
         />
-        <motion.div
-            animate={{
-                x: [0, -40, 0],
-                y: [0, 60, 0],
-                scale: [1.1, 1, 1.1],
-            }}
-            transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }}
+        <div
             className="absolute top-[20%] -right-[10%] w-[50%] h-[50%] bg-blue-900/5 rounded-full blur-[80px]"
         />
-        <motion.div
-            animate={{
-                x: [0, 30, 0],
-                y: [0, 40, 0],
-                rotate: 180,
-            }}
-            transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-            className="absolute -bottom-[20%] left-[20%] w-[70%] h-[70%] bg-primary/10 rounded-full blur-[120px]"
+        <div
+            className="absolute -bottom-[20%] left-[20%] w-[70%] h-[70%] bg-primary/10 rounded-full blur-[120px] rotate-180"
         />
 
         {/* Subtle Noise/Texture */}
@@ -104,7 +63,9 @@ const MovingBackground = () => (
         {/* Delicate Perspective Grid */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(10,31,68,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(10,31,68,0.03)_1px,transparent_1px)] bg-[size:100px_100px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)]" />
     </div>
-);
+));
+
+
 
 export const Landing = () => {
     const navigate = useNavigate();
@@ -117,15 +78,77 @@ export const Landing = () => {
         country: ''
     });
 
-    const [materialInput, setMaterialInput] = useState('');
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [results, setResults] = useState<any[] | null>(null);
-    const [selectedFactoryForDocs, setSelectedFactoryForDocs] = useState<any>(null);
+    interface UploadedFile {
+        id: string;
+        name: string;
+        type: string;
+        size: number;
+        file?: File;
+    }
 
-    const handleAddMaterial = () => {
-        if (materialInput.trim() && !formData.materials?.includes(materialInput)) {
-            setFormData(prev => ({ ...prev, materials: [...(prev.materials || []), materialInput] }));
-            setMaterialInput('');
+    const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+    const [fileError, setFileError] = useState<string | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [results, setResults] = useState<any[] | null>(null); // Using any[] to match existing mixed usage, or Factory[]
+    const [selectedFactoryForDocs, setSelectedFactoryForDocs] = useState<any | null>(null);
+
+    // Debounced values for performance
+    // const debouncedName = useDebounce(formData.name, 300); // Removed unused
+    // const debouncedDesc = useDebounce(formData.description, 300); // Removed unused
+
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files) return;
+
+        const newFiles: UploadedFile[] = [];
+        let errorMsg = null;
+
+        Array.from(files).forEach(file => {
+            // Validation
+            if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
+                errorMsg = `الملف ${file.name} مرفوض.يرجى رفع ملفات Word أو PDF فقط.`;
+                return;
+            }
+            if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                errorMsg = `الملف ${file.name} كبير جداً.الحد الأقصى 5 ميجابايت.`;
+                return;
+            }
+            // Check Duplicate
+            if (uploadedFiles.some(f => f.name === file.name)) {
+                errorMsg = `الملف ${file.name} مكرر.`;
+                return;
+            }
+
+            newFiles.push({
+                id: Math.random().toString(36).substr(2, 9),
+                name: file.name,
+                type: file.type,
+                size: file.size,
+                file: file
+            });
+        });
+
+        if (errorMsg) setFileError(errorMsg);
+        else setFileError(null);
+
+        if (newFiles.length > 0) {
+            setUploadedFiles(prev => [...prev, ...newFiles]);
+        }
+
+        // Reset input
+        e.target.value = '';
+    };
+
+    const handleRemoveFile = (id: string) => {
+        setUploadedFiles(prev => prev.filter(f => f.id !== id));
+    };
+
+    const handleRenameFile = (id: string) => {
+        const newName = prompt("أدخل الاسم الجديد للملف:");
+        if (newName && newName.trim()) {
+            setUploadedFiles(prev => prev.map(f =>
+                f.id === id ? { ...f, name: newName.trim() } : f
+            ));
         }
     };
 
@@ -137,15 +160,27 @@ export const Landing = () => {
         await new Promise(r => setTimeout(r, 2500));
 
         try {
-            const matches = await findTopFactories(formData);
+            // Determine Industry/Materials via AI Logic BEFORE saving
+            const fullText = (formData.description || '') + ' ' + (formData.name || '');
+            const inferredIndustry = inferIndustry(fullText);
+            const inferredMaterials = extractSignals(fullText); // Returns array of "Type: Value" strings
 
-            // Persist the request to Supabase
+            // Update formData locally so checks/UI reflect it (optional but good consistency)
+            const updatedData = {
+                ...formData,
+                industry: inferredIndustry,
+                materials: inferredMaterials.map(s => s.split(': ')[1] || s) // Extract just value
+            };
+
+            const matches = await findTopFactories(updatedData);
+
+            // Persist the request to Supabase using Correct Inferred Data
             await supabase.from('inventions').insert([{
                 name: formData.name,
                 description: formData.description,
-                industry: formData.industry,
+                industry: inferredIndustry,
                 type: formData.type,
-                materials: formData.materials,
+                materials: updatedData.materials,
                 country: formData.country,
                 analysis_result: matches
             }]);
@@ -200,13 +235,11 @@ export const Landing = () => {
                         >
                             {/* Hero Section */}
                             <div className="max-w-3xl mx-auto text-center mb-16 space-y-6">
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.8 }}
-                                    animate={{ opacity: 1, scale: 1 }}
+                                <div
                                     className="inline-block px-4 py-1.5 bg-primary/5 text-primary rounded-full text-xs font-black uppercase tracking-widest mb-4"
                                 >
                                     الجيل القادم من تكنولوجيا التصنيع
-                                </motion.div>
+                                </div>
                                 <h1 className="text-3xl md:text-5xl lg:text-6xl font-black text-primary leading-[1.2]">
                                     حول فكرتك إلى <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 to-primary">واقع ملموس</span>
                                 </h1>
@@ -263,27 +296,74 @@ export const Landing = () => {
                                                 />
                                             </div>
 
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                                <div className="space-y-2">
-                                                    <label className="text-sm font-black text-gray-400 mr-2 flex items-center gap-2">
-                                                        <Zap size={14} /> القطاع الصناعي
-                                                    </label>
-                                                    <select
-                                                        value={formData.industry || 'machinery'}
-                                                        onChange={(e) => setFormData({ ...formData, industry: e.target.value })}
-                                                        className="w-full h-14 px-6 bg-gray-50/50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-bold text-gray-700 appearance-none cursor-pointer"
-                                                    >
-                                                        <option value="machinery">الآلات والمعدات الميكانيكية</option>
-                                                        <option value="automotive">صناعة السيارات والمركبات</option>
-                                                        <option value="electronics">الإلكترونيات والمعدات الكهربائية</option>
-                                                        <option value="plastic">البلاستيك والمطاط (اللدائن)</option>
-                                                        <option value="metal">المعادن وتشكيل الصلب</option>
-                                                        <option value="textile">المنسوجات والأزياء</option>
-                                                        <option value="food">الصناعات الغذائية والمشروبات</option>
-                                                        <option value="aquaculture">الاستزراع المائي والسمكي</option>
-                                                        <option value="general">تصنيع عام / أخرى</option>
-                                                    </select>
+                                            {/* File Upload Section */}
+                                            <div className="space-y-4">
+                                                <label className="text-sm font-black text-gray-400 mr-2 flex items-center gap-2">
+                                                    <Upload size={14} /> المرفقات (Word, PDF)
+                                                </label>
+
+                                                <div className="relative group">
+                                                    <input
+                                                        type="file"
+                                                        multiple
+                                                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                                        onChange={handleFileUpload}
+                                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                    />
+                                                    <div className="border-2 border-dashed border-gray-200 rounded-2xl p-8 text-center transition-all group-hover:border-primary/50 group-hover:bg-primary/5">
+                                                        <div className="w-12 h-12 bg-gray-50 text-gray-400 rounded-full flex items-center justify-center mx-auto mb-3 group-hover:bg-white group-hover:text-primary transition-colors">
+                                                            <Upload size={20} />
+                                                        </div>
+                                                        <p className="text-sm font-bold text-gray-500">
+                                                            اسحب الملفات هنا أو <span className="text-primary">اضغط للاستعراض</span>
+                                                        </p>
+                                                        <p className="text-xs text-gray-400 mt-1">ندعم ملفات PDF و Word فقط</p>
+                                                    </div>
                                                 </div>
+
+                                                {fileError && (
+                                                    <div className="flex items-center gap-2 text-red-500 bg-red-50 px-4 py-2 rounded-xl text-sm font-bold">
+                                                        <AlertCircle size={16} />
+                                                        {fileError}
+                                                    </div>
+                                                )}
+
+                                                {uploadedFiles.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        {uploadedFiles.map(file => (
+                                                            <div key={file.id} className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+                                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center shrink-0">
+                                                                        <FileText size={20} />
+                                                                    </div>
+                                                                    <div className="truncate">
+                                                                        <p className="text-sm font-black text-gray-700 truncate">{file.name}</p>
+                                                                        <p className="text-[10px] text-gray-400">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center gap-1">
+                                                                    <button
+                                                                        onClick={() => handleRenameFile(file.id)}
+                                                                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                                                        title="تغيير الاسم"
+                                                                    >
+                                                                        <Edit2 size={16} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleRemoveFile(file.id)}
+                                                                        className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                                        title="حذف الملف"
+                                                                    >
+                                                                        <Trash2 size={16} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div className="space-y-2">
                                                     <label className="text-sm font-black text-gray-400 mr-2 flex items-center gap-2">
                                                         <Globe size={14} /> الدولة المفضلة
@@ -295,46 +375,6 @@ export const Landing = () => {
                                                         className="w-full h-14 px-6 bg-gray-50/50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-bold text-gray-700"
                                                         placeholder="مصر، الصين، ألمانيا..."
                                                     />
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <label className="text-sm font-black text-gray-400 mr-2 flex items-center gap-2">
-                                                    <Package size={14} /> المواد الأساسية
-                                                </label>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        type="text"
-                                                        value={materialInput}
-                                                        onChange={(e) => setMaterialInput(e.target.value)}
-                                                        className="flex-1 h-14 px-6 bg-gray-50/50 border border-gray-200 rounded-2xl focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none transition-all font-bold text-gray-700"
-                                                        placeholder="أضف مادة... (مثل: معدن، سيليكون)"
-                                                        onKeyDown={(e) => e.key === 'Enter' && handleAddMaterial()}
-                                                    />
-                                                    <button
-                                                        onClick={handleAddMaterial}
-                                                        className="h-14 px-8 bg-gray-800 text-white rounded-2xl font-black hover:bg-gray-900 transition-colors shadow-lg shadow-gray-200"
-                                                    >
-                                                        إضافة
-                                                    </button>
-                                                </div>
-                                                <div className="flex gap-2 flex-wrap">
-                                                    {formData.materials?.map((m, i) => (
-                                                        <motion.span
-                                                            key={i}
-                                                            initial={{ scale: 0.8, opacity: 0 }}
-                                                            animate={{ scale: 1, opacity: 1 }}
-                                                            className="bg-primary/5 text-primary border border-primary/20 px-4 py-1.5 rounded-full text-sm font-bold flex items-center gap-2 group"
-                                                        >
-                                                            {m}
-                                                            <button
-                                                                onClick={() => setFormData({ ...formData, materials: formData.materials?.filter((_, idx) => idx !== i) })}
-                                                                className="text-primary/40 hover:text-red-500 transition-colors text-lg"
-                                                            >
-                                                                ×
-                                                            </button>
-                                                        </motion.span>
-                                                    ))}
                                                 </div>
                                             </div>
 
@@ -478,7 +518,7 @@ export const Landing = () => {
                                                                 <div className="w-32 h-2 bg-gray-100 rounded-full overflow-hidden">
                                                                     <motion.div
                                                                         initial={{ width: 0 }}
-                                                                        animate={{ width: `${(factory.stabilityIndex || 0.7) * 100}%` }}
+                                                                        animate={{ width: `${(factory.stabilityIndex || 0.7) * 100}% ` }}
                                                                         className={clsx(
                                                                             "h-full rounded-full transition-all duration-1000",
                                                                             (factory.stabilityIndex || 0.7) > 0.8 ? "bg-green-500" : "bg-primary"
@@ -539,27 +579,31 @@ export const Landing = () => {
                                                                 onClick={() => {
                                                                     if (factory.phone && factory.id) {
                                                                         FeedbackService.logCommunication({ factoryId: factory.id, type: 'whatsapp' });
-                                                                        const cleanPhone = factory.phone.toString().replace(/\D/g, '');
+                                                                        let cleanPhone = factory.phone.toString().replace(/\D/g, '');
+                                                                        // Assuming Egypt/Local by default if no country code (length check 10-11 digits starting with 0)
+                                                                        if (cleanPhone.startsWith('0') && cleanPhone.length <= 11) {
+                                                                            cleanPhone = '2' + cleanPhone; // Add Egypt code as default for MVP
+                                                                        }
                                                                         window.open(`https://wa.me/${cleanPhone}`, '_blank');
                                                                     }
                                                                 }}
                                                             >
                                                                 <MessageSquare size={18} /> واتساب
-                                                            </button>
+                                                            </button >
                                                             <button
                                                                 className="flex items-center justify-center gap-2 h-14 bg-white border-2 border-primary text-primary rounded-2xl font-black hover:bg-primary/5 transition-all"
                                                                 onClick={() => setSelectedFactoryForDocs(factory)}
                                                             >
                                                                 <FileText size={18} /> المستندات
                                                             </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
+                                                        </div >
+                                                    </div >
+                                                </div >
+                                            </div >
 
                                             {/* Background Decor */}
-                                            <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
-                                        </motion.div>
+                                            < div className="absolute -bottom-10 -left-10 w-40 h-40 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+                                        </motion.div >
                                     ))
                                 ) : (
                                     <motion.div
@@ -570,21 +614,21 @@ export const Landing = () => {
                                         <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6 text-gray-400">
                                             <Search size={40} />
                                         </div>
-                                        <h4 className="text-2xl font-black text-gray-800 mb-2">عذراً، لم نجد مصانع تطابق طلبك بدقة</h4>
-                                        <p className="text-gray-500 font-bold mb-8">حاول تغيير الكلمات الوصفية أو اختيار قطاع صناعي مختلف لإعطاء المحرك فرصة أكبر.</p>
+                                        <h4 className="text-2xl font-black text-gray-800 mb-2">جاري تحديث قاعدة بيانات المصانع...</h4>
+                                        <p className="text-gray-500 font-bold mb-8">يبدو أن قاعدة البيانات فارغة حالياً. يرجى المحاولة لاحقاً بعد إضافة مصانع للنظام.</p>
                                         <button
                                             onClick={() => setResults(null)}
                                             className="px-10 py-4 bg-gray-800 text-white rounded-2xl font-black hover:bg-black transition-all"
                                         >
-                                            تعديل بيانات البحث
+                                            العودة للبحث
                                         </button>
                                     </motion.div>
                                 )}
-                            </div>
-                        </motion.div>
+                            </div >
+                        </motion.div >
                     )}
-                </AnimatePresence>
-            </main>
+                </AnimatePresence >
+            </main >
             <Footer />
 
             <DocumentModal
@@ -593,6 +637,6 @@ export const Landing = () => {
                 factory={selectedFactoryForDocs || {}}
                 invention={formData}
             />
-        </div>
+        </div >
     );
 };

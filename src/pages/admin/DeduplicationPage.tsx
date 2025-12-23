@@ -187,10 +187,17 @@ export const DeduplicationPage = () => {
                     <AlertTriangle size={28} />
                 </div>
                 <div>
-                    <h4 className="text-lg font-black text-blue-900 mb-1">كيف يعمل المحرك؟</h4>
-                    <p className="text-blue-700 font-bold text-sm leading-relaxed">
-                        يستخدم النظام خوارزمية Levenshtein لمقارنة تشابه الأسماء مع مراعاة تطابق المدينة والبريد الإلكتروني. عند الضغط على "دمج"، سيتم الاحتفاظ بالسجل الذي تم رفعه أولاً وحذف السجلات المتكررة للحفاظ على دقة الإحصائيات.
-                    </p>
+                    <div>
+                        <h4 className="text-lg font-black text-blue-900 mb-1">كيف يعمل محرك كشف التكرار؟</h4>
+                        <p className="text-blue-700 font-bold text-sm leading-relaxed mb-2">
+                            يستخدم النظام خوارزميات ذكية (Levenshtein) لمقارنة الأسماء والبيانات.
+                        </p>
+                        <ul className="text-blue-700/80 text-xs font-bold space-y-1 list-disc list-inside">
+                            <li>دمج السجلات يمنع تشتت تقييمات المصانع عبر سجلات متعددة.</li>
+                            <li>يساعد في الحصول على إحصائيات دقيقة حول عدد المصانع في كل قطاع.</li>
+                            <li>عند الدمج، يتم الحفاظ على السجل الأقدم كمرجع رئيسي.</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>

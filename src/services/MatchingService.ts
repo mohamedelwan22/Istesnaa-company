@@ -43,7 +43,7 @@ const INDUSTRY_MAP: Record<string, string[]> = {
     'aquaculture': ['استزراع', 'مائي', 'أسماك']
 };
 
-const extractSignals = (text: string) => {
+export const extractSignals = (text: string) => {
     const found: string[] = [];
     const lowText = text.toLowerCase();
 
@@ -56,6 +56,22 @@ const extractSignals = (text: string) => {
     });
 
     return found;
+};
+
+export const inferIndustry = (text: string): string => {
+    let bestIndustry = 'general';
+    let maxCount = 0;
+    const lowerText = text.toLowerCase();
+
+    Object.entries(INDUSTRY_MAP).forEach(([ind, keywords]) => {
+        const count = keywords.reduce((acc, k) => acc + (lowerText.includes(k) ? 1 : 0), 0);
+        if (count > maxCount) {
+            maxCount = count;
+            bestIndustry = ind;
+        }
+    });
+
+    return bestIndustry;
 };
 
 export const findTopFactories = async (invention: Partial<Invention>): Promise<MatchResult[]> => {
@@ -76,8 +92,11 @@ export const findTopFactories = async (invention: Partial<Invention>): Promise<M
 
     if (allFactories.length === 0) return [];
 
-    const inventionSignals = extractSignals((invention.description || '') + ' ' + (invention.name || ''));
-    const inventionIndustry = (invention.industry || '').toLowerCase();
+    const fullText = (invention.description || '') + ' ' + (invention.name || '');
+    const inventionSignals = extractSignals(fullText);
+
+    // Auto-Infer Industry (AI Automation)
+    const inventionIndustry = inferIndustry(fullText);
     const mappedKeywords = INDUSTRY_MAP[inventionIndustry] || [];
 
     // 1. Scoring Logic with Weights
@@ -89,7 +108,7 @@ export const findTopFactories = async (invention: Partial<Invention>): Promise<M
             .filter((i): i is string => typeof i === 'string');
         const factoryMetadata = ((factory.capabilities || '') + ' ' + (factory.notes || '') + ' ' + (factory.name || '') + ' ' + factoryIndustries.join(' ')).toLowerCase();
 
-        // Industry Match (Improved with Mapping)
+        // Industry Match (Using Inferred Industry)
         const hasIndustryMatch = factoryIndustries.some(ind => {
             const lowInd = (ind || '').toLowerCase();
             return mappedKeywords.some(k => lowInd.includes(k)) || lowInd.includes(inventionIndustry);
@@ -177,13 +196,31 @@ export const findTopFactories = async (invention: Partial<Invention>): Promise<M
     });
 
     // 3. Filtering and Sorting
+
+    // Level 1: Strict Match
     let filtered = scored.filter(f => f.matchScore >= 15);
 
-    // If no good matches, be more lenient
+    // Level 2: Lenient Match (if strict failed)
     if (filtered.length === 0) {
-        filtered = scored.filter(f => f.matchScore >= 5).slice(0, 3);
+        filtered = scored.filter(f => f.matchScore > 0);
     }
 
+    // Level 3: Fallback (if everything failed, just take top 3 by capability/size generally)
+    // This ensures we NEVER return empty results as long as DB has factories
+    if (filtered.length === 0) {
+        filtered = scored
+            .sort((a, b) => (b.stabilityIndex || 0) - (a.stabilityIndex || 0)) // Sort by stability/data-quality as proxy
+            .slice(0, 3)
+            .map(f => ({
+                ...f,
+                explanation: `نرحش لك هذا المصنع كخيار بديل محتمل نظراً لعدم تطابق المواصفات الدقيقة، ولكنه يمتلك إمكانيات واعدة.`,
+                matchScore: 5 // Minimal score to show it exists but isn't perfect
+            }));
+    }
+
+    // Attach inferred data to result so UI *could* use it if permitted, 
+    // or just effectively it's used for this result generation.
+    // We return MatchResult[] which extends Factory.
     return filtered
         .sort((a, b) => b.matchScore - a.matchScore)
         .slice(0, 5);
