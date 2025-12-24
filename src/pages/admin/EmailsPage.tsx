@@ -4,12 +4,12 @@ import type { Factory } from '../../types';
 import { motion } from 'framer-motion';
 import {
     Search, Mail, Send, Phone, User, CheckCircle,
-    Loader2, Users, BarChart3,
+    Loader2, BarChart3,
     MousePointer2, Clock, Eye, Trash2, X,
-    FileText, Paperclip, ChevronRight, AlertTriangle
+    FileText, Paperclip, AlertTriangle
 } from 'lucide-react';
 import clsx from 'clsx';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import type { ContactLog } from '../../types';
 
 export const EmailsPage = () => {
@@ -25,13 +25,11 @@ export const EmailsPage = () => {
 
     // New State for Bulk Email Flow
     const [contactLogs, setContactLogs] = useState<ContactLog[]>([]);
-    const [selectedFactories, setSelectedFactories] = useState<string[]>([]);
     const [emailTemplate, setEmailTemplate] = useState({
         subject: 'فرصة تصنيع وتوريد جديدة - منصة استصناع',
         body: `مرحباً {factory_name}،\n\nنود إفادتكم بوجود طلبات تصنيع جديدة في قطاع {industry} توافق تخصصاتكم...\n\nتحياتنا، فريق استصناع.`,
         attachments: [{ name: 'Project_Brief.pdf', size: '1.2MB' }] // Placeholder attachments
     });
-    const [currentSendingIndex, setCurrentSendingIndex] = useState(-1);
     const [showPreview, setShowPreview] = useState(false);
     const [isDispatching, setIsDispatching] = useState(false);
     const [sendingQueue, setSendingQueue] = useState<Factory[]>([]);
