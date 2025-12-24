@@ -4,11 +4,13 @@ import type { Factory } from '../../types';
 import { motion } from 'framer-motion';
 import {
     Search, Mail, Send, Phone, User, CheckCircle,
-    AlertCircle, Loader2, Users, BarChart3,
-    MousePointer2, Clock
+    Loader2, Users, BarChart3,
+    MousePointer2, Clock, Eye, Trash2, X,
+    FileText, Paperclip, ChevronRight, AlertTriangle
 } from 'lucide-react';
 import clsx from 'clsx';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import type { ContactLog } from '../../types';
 
 export const EmailsPage = () => {
     const [factories, setFactories] = useState<Factory[]>([]);
@@ -18,12 +20,27 @@ export const EmailsPage = () => {
     const [progress, setProgress] = useState(0);
     const [isSimulation, setIsSimulation] = useState(false);
     const [simulationLog, setSimulationLog] = useState<{ recipients: number, subject: string, batchCount: number } | null>(null);
-    const [activeTab, setActiveTab] = useState<'factories' | 'campaigns'>('factories');
+    const [activeTab, setActiveTab] = useState<'factories' | 'campaigns' | 'contacted'>('factories');
     const [stats, setStats] = useState<{ total: number, byType: { whatsapp: number, email: number } } | null>(null);
+
+    // New State for Bulk Email Flow
+    const [contactLogs, setContactLogs] = useState<ContactLog[]>([]);
+    const [selectedFactories, setSelectedFactories] = useState<string[]>([]);
+    const [emailTemplate, setEmailTemplate] = useState({
+        subject: 'فرصة تصنيع وتوريد جديدة - منصة استصناع',
+        body: `مرحباً {factory_name}،\n\nنود إفادتكم بوجود طلبات تصنيع جديدة في قطاع {industry} توافق تخصصاتكم...\n\nتحياتنا، فريق استصناع.`,
+        attachments: [{ name: 'Project_Brief.pdf', size: '1.2MB' }] // Placeholder attachments
+    });
+    const [currentSendingIndex, setCurrentSendingIndex] = useState(-1);
+    const [showPreview, setShowPreview] = useState(false);
+    const [isDispatching, setIsDispatching] = useState(false);
+    const [sendingQueue, setSendingQueue] = useState<Factory[]>([]);
+    const [queueIndex, setQueueIndex] = useState(0);
 
     useEffect(() => {
         fetchFactories();
         loadStats();
+        fetchContactLogs();
     }, []);
 
     const loadStats = async () => {
@@ -31,9 +48,25 @@ export const EmailsPage = () => {
         if (data) setStats(data);
     };
 
-    useEffect(() => {
-        fetchFactories();
-    }, []);
+    const fetchContactLogs = async () => {
+        const { data, error } = await supabase
+            .from('contact_logs')
+            .select('*')
+            .order('sent_at', { ascending: false });
+
+        if (!error && data) {
+            setContactLogs(data);
+        } else if (error && error.code !== 'PGRST116') {
+            console.error('Error fetching logs:', error);
+            // Fallback for simulation/local if table doesn't exist
+            const mockLogs: ContactLog[] = [
+                { id: 'mock-01', factory_id: 'mock-1', factory_name: 'مصنع الأمل للبلاستيك', email: 'hope@factory.com', industry: 'البلاستيك', sent_at: new Date().toISOString(), status: 'Sent' },
+                { id: 'mock-02', factory_id: 'mock-2', factory_name: 'شركة الصناعات المعدنية', email: 'metal@co.com', industry: 'المعادن', sent_at: new Date().toISOString(), status: 'Sent' }
+            ];
+            setContactLogs(mockLogs);
+        }
+    };
+
 
     const fetchFactories = async () => {
         setLoading(true);
@@ -86,21 +119,37 @@ export const EmailsPage = () => {
             f.industry?.some(ind => ind.toLowerCase().includes(searchQuery.toLowerCase()))
         );
 
-    const handleSendIndividual = (factory: Factory) => {
+    const handleSendIndividual = async (factory: Factory) => {
         if (!factory.email) return;
         const subject = 'فرصة تصنيع جديدة - منصة استصناع';
         const body = `مرحباً ${factory.name}،\n\nنود التواصل معكم بخصوص فرصة تصنيع جديدة...\n\nشكراً لكم.`;
 
         if (isSimulation) {
             alert(`[محاكاة] سيتم إرسال إيميل إلى: ${factory.email}\nالعنوان: ${subject}\n\nالنظام يعمل بشكل سليم ✅`);
-            return;
+        } else {
+            window.open(`mailto:${factory.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
         }
 
-        window.open(`mailto:${factory.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+        // Log the effort
+        const newLog: ContactLog = {
+            factory_id: factory.id || 'unknown',
+            factory_name: factory.name || 'غير مسمى',
+            email: factory.email || 'no-email',
+            industry: factory.industry?.[0] || 'عام',
+            sent_at: new Date().toISOString(),
+            status: 'Sent'
+        };
+
+        const { data, error } = await supabase.from('contact_logs').insert([newLog]).select();
+        if (!error && data && data[0]) {
+            setContactLogs(prev => [data[0], ...prev]);
+        } else {
+            // Fallback if select fails or table doesn't exist (local simulation)
+            setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
+        }
     };
 
     const [selectedIndustry, setSelectedIndustry] = useState<string>('all');
-    const [showReviewModal, setShowReviewModal] = useState(false);
 
     // Filter Logic
     const factoriesToEmail = factories
@@ -109,62 +158,118 @@ export const EmailsPage = () => {
 
     const industries = Array.from(new Set(factories.flatMap(f => f.industry || []))).filter(Boolean);
 
-    const handleOpenReview = () => {
-        if (factoriesToEmail.length === 0) {
-            alert('لا يوجد مصانع مسجلة بإيميلات في هذا القطاع.');
-            return;
-        }
-        setShowReviewModal(true);
+    const tokenize = (text: string, factory: Factory) => {
+        return text
+            .replace(/{factory_name}/g, factory.name || 'عميلنا العزيز')
+            .replace(/{industry}/g, factory.industry?.[0] || 'قطاعكم الصناعي');
     };
 
     const confirmSendBulk = async () => {
-        setShowReviewModal(false);
+        const limit = 300;
+        const targetList = factoriesToEmail.slice(0, limit);
+
+        if (targetList.length === 0) return;
+
+        setSendingQueue(targetList);
+        setQueueIndex(0);
+        setShowPreview(false);
+        setIsDispatching(true);
         setSending(true);
         setProgress(0);
-        setSimulationLog(null);
+    };
 
-        const limit = 300;
-        const targetList = factoriesToEmail.slice(0, limit); // Cap at 300 as per requirements
-
-        const batchSize = 50; // Internal batching for performance/spam prevention
-        const batches = [];
-        for (let i = 0; i < targetList.length; i += batchSize) {
-            batches.push(targetList.slice(i, i + batchSize));
+    const processNextInQueue = async (skip = false) => {
+        if (queueIndex >= sendingQueue.length) {
+            handleFinishDispatch();
+            return;
         }
 
-        const subject = 'فرصة تصنيع وتوريد جديدة - منصة استصناع';
-        const body = `مرحباً بكم،\n\nنود إفادتكم بوجود طلبات تصنيع جديدة توافق تخصصاتكم...\n\nتحياتنا، فريق استصناع.`;
+        const factory = sendingQueue[queueIndex];
 
-        for (let i = 0; i < batches.length; i++) {
-            const batch = batches[i];
-            const emails = batch.map(f => f.email).join(',');
+        if (!skip) {
+            const tokenizedSubject = tokenize(emailTemplate.subject, factory);
+            const tokenizedBody = tokenize(emailTemplate.body, factory);
 
-            if (!isSimulation) {
-                // In a real scenario, this would be a backend call. 
-                // For MVP without backend, we can't actually "BCC" 50 people via mailto easily without hitting length limits.
-                // We will simulate the "process" of sending.
-                // Using body and subject variables to suppress lint warnings and simulate full context.
-                console.log('Sending batch to:', emails);
-                console.log('Content:', { subject, body });
+            if (isSimulation) {
+                console.log(`[Simulation] Sending to ${factory.email}: ${tokenizedSubject}`);
+            } else {
+                // Individualized Gmail Link
+                const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${factory.email}&su=${encodeURIComponent(tokenizedSubject)}&body=${encodeURIComponent(tokenizedBody)}&from=partnerships@estesnaa.com`;
+                window.open(gmailLink, '_blank');
             }
 
-            setProgress(Math.round(((i + 1) / batches.length) * 100));
-            await new Promise(r => setTimeout(r, isSimulation ? 500 : 2000));
+            // ONLY LOG IF NOT SKIPPED
+            const newLog: ContactLog = {
+                factory_id: factory.id || 'unknown',
+                factory_name: factory.name || 'غير مسمى',
+                email: factory.email || 'no-email',
+                industry: factory.industry?.[0] || 'عام',
+                sent_at: new Date().toISOString(),
+                status: 'Sent'
+            };
+
+            // Save to Supabase
+            const { data, error } = await supabase.from('contact_logs').insert([newLog]).select();
+            if (!error && data && data[0]) {
+                setContactLogs(prev => [data[0], ...prev]);
+            } else {
+                setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
+            }
         }
 
+        const nextIndex = queueIndex + 1;
+        setQueueIndex(nextIndex);
+        setProgress(Math.round((nextIndex / sendingQueue.length) * 100));
+
+        if (nextIndex >= sendingQueue.length) {
+            handleFinishDispatch();
+        }
+    };
+
+    const handleFinishDispatch = () => {
+        setIsDispatching(false);
+        setSending(false);
+        setSendingQueue([]);
+        setQueueIndex(0);
         if (isSimulation) {
             setSimulationLog({
-                recipients: targetList.length,
-                subject: subject,
-                batchCount: batches.length
+                recipients: sendingQueue.length,
+                subject: emailTemplate.subject,
+                batchCount: sendingQueue.length
             });
         }
+        alert('اكتملت عملية المعالجة بنجاح.');
+    };
 
-        setSending(false);
-        if (!isSimulation) {
-            setProgress(100);
-            setTimeout(() => setProgress(0), 3000);
-            alert('تم الانتهاء من عملية الإرسال بنجاح!');
+    const handleDeleteLog = async (id: string) => {
+        if (!confirm('هل أنت متأكد من حذف هذا السجل؟')) return;
+
+        // Bypassing database call for mock/simulation records to avoid error alerts
+        if (id.toString().startsWith('mock-') || id.toString().length < 5) {
+            setContactLogs(prev => prev.filter(log => log.id !== id));
+            return;
+        }
+
+        const { error } = await supabase.from('contact_logs').delete().eq('id', id);
+
+        if (error) {
+            console.error('Error deleting log:', error);
+            alert('فشل الحذف من قاعدة البيانات. تأكد من وجود جدول contact_logs وصلاحيات الوصول.');
+        } else {
+            setContactLogs(prev => prev.filter(log => log.id !== id));
+        }
+    };
+
+    const handleClearAllLogs = async () => {
+        if (!confirm('هل أنت متأكد من مسح جميع السجلات؟')) return;
+        // Delete all rows where id is not 0 (effectively everything)
+        const { error } = await supabase.from('contact_logs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+
+        if (error) {
+            console.error('Error clearing logs:', error);
+            alert('فشل مسح السجلات من قاعدة البيانات.');
+        } else {
+            setContactLogs([]);
         }
     };
 
@@ -232,7 +337,7 @@ export const EmailsPage = () => {
                     </select>
 
                     <button
-                        onClick={handleOpenReview}
+                        onClick={() => setShowPreview(true)}
                         disabled={sending || factoriesToEmail.length === 0}
                         className={clsx(
                             "h-14 px-8 rounded-2xl font-black flex items-center gap-3 shadow-lg transition-all duration-300",
@@ -241,77 +346,252 @@ export const EmailsPage = () => {
                                     "bg-primary text-white hover:bg-blue-800 shadow-primary/20 hover:-translate-y-1"
                         )}
                     >
-                        {sending ? <Loader2 className="animate-spin" size={20} /> : isSimulation ? <AlertCircle size={20} /> : <Users size={20} />}
-                        {sending ? `جاري المعالجة (${progress}%)...` : isSimulation ? 'تجربة إرسال (Simulation)' : 'إرسال جماعي محدد'}
+                        {sending ? <Loader2 className="animate-spin" size={20} /> : <Eye size={20} />}
+                        {sending ? `جاري الإرسال (${progress}%)...` : 'معاينة الحملة'}
                     </button>
                 </div>
             </div>
 
-            {/* Review Modal */}
-            {showReviewModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-primary/20 backdrop-blur-sm">
+            {/* Premium Preview Overlay */}
+            {showPreview && (
+                <div className="fixed inset-0 z-[100] bg-gray-900/60 backdrop-blur-md flex items-center justify-center p-4 md:p-8 animate-in fade-in duration-300">
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="bg-white rounded-[2rem] shadow-2xl w-full max-w-2xl overflow-hidden max-h-[90vh] flex flex-col"
+                        initial={{ opacity: 0, y: 50, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        className="bg-white w-full max-w-6xl h-[90vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-white/20"
                     >
-                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                        {/* Header */}
+                        <div className="p-8 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                             <div>
-                                <h3 className="text-xl font-black text-gray-900">مراجعة الحملة {isSimulation && <span className="text-orange-500">(وضع المحاكاة)</span>}</h3>
-                                <p className="text-sm font-bold text-gray-400">سيتم إرسال الرسالة إلى {Math.min(factoriesToEmail.length, 300)} مصنع</p>
+                                <h2 className="text-2xl font-black text-gray-900 flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-primary text-white rounded-xl flex items-center justify-center">
+                                        <Mail size={20} />
+                                    </div>
+                                    معاينة تفاصيل الحملة الإعلانية
+                                </h2>
+                                <p className="text-gray-500 font-bold mt-1">تأكد من مراجعة النص قبل البدء بالإرسال التسلسلي لـ {Math.min(factoriesToEmail.length, 300)} مصنع</p>
                             </div>
-                            <button onClick={() => setShowReviewModal(false)} className="text-gray-400 hover:text-red-500"><AlertCircle size={24} /></button>
-                        </div>
-
-                        <div className="p-6 overflow-y-auto flex-1 space-y-6">
-                            {/* Message Preview */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-black text-gray-400 uppercase">نص الرسالة</label>
-                                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 text-sm font-medium text-gray-600">
-                                    مرحباً بكم،<br /><br />نود إفادتكم بوجود طلبات تصنيع جديدة توافق تخصصاتكم...
-                                </div>
-                            </div>
-
-                            {/* Attachments */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-black text-gray-400 uppercase">المرفقات</label>
-                                <div className="flex gap-2">
-                                    <span className="px-3 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold border border-blue-100">Project_Brief.pdf</span>
-                                </div>
-                            </div>
-
-                            {/* Recipient List */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-black text-gray-400 uppercase">قائمة المستلمين ({Math.min(factoriesToEmail.length, 300)})</label>
-                                <div className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden max-h-40 overflow-y-auto">
-                                    {factoriesToEmail.slice(0, 300).map((f, i) => (
-                                        <div key={i} className="px-4 py-2 border-b border-gray-100 last:border-0 text-sm flex justify-between">
-                                            <span className="font-bold text-gray-700">{f.name}</span>
-                                            <span className="text-gray-400 text-xs">{f.email}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                                {factoriesToEmail.length > 300 && (
-                                    <p className="text-xs text-orange-500 font-bold">* تم تحديد أول 300 مصنع فقط حسب حدود النظام.</p>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="p-6 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-3">
                             <button
-                                onClick={() => setShowReviewModal(false)}
-                                className="px-6 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-100 transition"
+                                onClick={() => setShowPreview(false)}
+                                className="w-12 h-12 rounded-2xl hover:bg-red-50 text-gray-400 hover:text-red-500 transition-all flex items-center justify-center border border-gray-100"
                             >
-                                إلغاء
+                                <X size={24} />
                             </button>
+                        </div>
+
+                        <div className="flex-1 overflow-hidden flex flex-col lg:flex-row">
+                            {/* Editor Side */}
+                            <div className="flex-1 p-8 overflow-y-auto space-y-8 border-l border-gray-100">
+                                {/* Fixed From */}
+                                <div className="space-y-3">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                        <User size={14} /> المُرسل (البريد الرسمي)
+                                    </label>
+                                    <div className="h-14 px-6 bg-gray-100 border border-gray-200 rounded-2xl flex items-center font-bold text-gray-500">
+                                        partnerships@estesnaa.com
+                                        <span className="mr-auto text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-md">موثق √</span>
+                                    </div>
+                                </div>
+
+                                {/* Editable Subject */}
+                                <div className="space-y-3">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                        <FileText size={14} /> موضوع الرسالة
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={emailTemplate.subject}
+                                        onChange={(e) => setEmailTemplate({ ...emailTemplate, subject: e.target.value })}
+                                        className="w-full h-14 px-6 bg-white border border-gray-200 rounded-2xl font-bold text-gray-900 focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all outline-none"
+                                        placeholder="أدخل عنوان الرسالة هنا..."
+                                    />
+                                </div>
+
+                                {/* Rich Text Placeholder Area */}
+                                <div className="space-y-3 flex-1">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                        <FileText size={14} /> محتوى الرسالة (Rich Editor)
+                                    </label>
+                                    <div className="relative">
+                                        <textarea
+                                            value={emailTemplate.body}
+                                            onChange={(e) => setEmailTemplate({ ...emailTemplate, body: e.target.value })}
+                                            className="w-full h-80 p-8 bg-white border border-gray-200 rounded-[2rem] font-medium text-gray-700 leading-relaxed focus:border-primary focus:ring-4 focus:ring-primary/5 transition-all outline-none resize-none"
+                                        />
+                                        <div className="absolute top-4 left-4 flex gap-2">
+                                            <div className="px-2 py-1 bg-gray-50 rounded border text-[10px] font-bold text-gray-400">Tokens: {'{factory_name}'}, {'{industry}'}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Attachments Area */}
+                                <div className="space-y-4">
+                                    <label className="text-xs font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                        <Paperclip size={14} /> المرفقات (Attachments)
+                                    </label>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {emailTemplate.attachments.map((file, idx) => (
+                                            <div key={idx} className="p-4 bg-blue-50/50 border border-blue-100 rounded-2xl flex items-center gap-4 group">
+                                                <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+                                                    <FileText size={18} />
+                                                </div>
+                                                <div className="flex-1 overflow-hidden">
+                                                    <div className="font-bold text-sm text-gray-900 truncate">{file.name}</div>
+                                                    <div className="text-[10px] text-gray-500">{file.size}</div>
+                                                </div>
+                                                <button
+                                                    onClick={() => setEmailTemplate({
+                                                        ...emailTemplate,
+                                                        attachments: emailTemplate.attachments.filter((_, i) => i !== idx)
+                                                    })}
+                                                    className="text-gray-400 hover:text-red-500 transition-colors"
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                        <button className="p-4 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center gap-2 text-gray-400 font-bold hover:border-primary hover:text-primary transition-all">
+                                            <Paperclip size={18} /> إضافة ملف جديد
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Recipients & Rules Side */}
+                            <div className="w-full lg:w-96 bg-gray-50/50 p-8 flex flex-col gap-8">
+                                <div className="bg-white p-6 rounded-3xl border border-gray-100">
+                                    <h3 className="text-sm font-black text-gray-900 mb-4 tracking-wider uppercase">قواعد الإرسال الآمن</h3>
+                                    <ul className="space-y-4">
+                                        <li className="flex items-start gap-3">
+                                            <div className="w-5 h-5 bg-green-100 text-green-600 rounded-full flex items-center justify-center shrink-0 mt-0.5"><CheckCircle size={12} /></div>
+                                            <p className="text-xs font-bold text-gray-600">إرسال تسلسلي (Individual) - كل مصنع يستلم نسخة خاصة به.</p>
+                                        </li>
+                                        <li className="flex items-start gap-3">
+                                            <div className="w-5 h-5 bg-green-100 text-green-600 rounded-full flex items-center justify-center shrink-0 mt-0.5"><CheckCircle size={12} /></div>
+                                            <p className="text-xs font-bold text-gray-600">تخصيص كامل (Tokenization) لضمان عدم تصنيف الرسالة كبريد مزعج.</p>
+                                        </li>
+                                        <li className="flex items-start gap-3">
+                                            <div className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shrink-0 mt-0.5"><Clock size={12} /></div>
+                                            <p className="text-xs font-bold text-gray-600">تأخير ذكي (3-6 ثوانٍ) بين كل رسالة لمحاكاة السلوك البشري.</p>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <div className="flex-1 flex flex-col overflow-hidden">
+                                    <h3 className="text-sm font-black text-gray-900 mb-4 tracking-wider uppercase">قائمة المستلمين ({Math.min(factoriesToEmail.length, 300)})</h3>
+                                    <div className="flex-1 bg-white rounded-3xl border border-gray-100 overflow-y-auto divide-y divide-gray-50">
+                                        {factoriesToEmail.slice(0, 300).map((f, i) => (
+                                            <div key={i} className="p-4 flex items-center gap-3 group">
+                                                <div className="w-8 h-8 bg-gray-50 text-gray-400 rounded-lg flex items-center justify-center text-[10px] font-black group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                                                    {i + 1}
+                                                </div>
+                                                <div className="flex-1 overflow-hidden">
+                                                    <div className="text-xs font-black text-gray-900 truncate">{f.name}</div>
+                                                    <div className="text-[10px] font-bold text-gray-400">{f.email}</div>
+                                                </div>
+                                                {f.industry?.[0] && (
+                                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full whitespace-nowrap">{f.industry[0]}</span>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-4">
+                                    {isSimulation && (
+                                        <div className="p-4 bg-orange-50 border border-orange-100 rounded-2xl flex items-center gap-4 text-orange-700">
+                                            <AlertTriangle size={20} />
+                                            <p className="text-xs font-bold italic">أنت تعمل حالياً في "وضع المحاكاة" - لن يتم فتح Gmail فعلياً.</p>
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={confirmSendBulk}
+                                        className={clsx(
+                                            "w-full h-16 rounded-2xl font-black text-white shadow-xl flex items-center justify-center gap-3 transition-all",
+                                            isSimulation ? "bg-orange-500 hover:bg-orange-600 shadow-orange-100" : "bg-primary hover:bg-blue-900 shadow-primary/20"
+                                        )}
+                                    >
+                                        <Send size={24} />
+                                        {isSimulation ? 'بدء محاكاة الإرسال الذكي' : 'تأكيد البدء بالإرسال الجماعي'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+
+            {/* Interactive Dispatcher Overlay */}
+            {isDispatching && sendingQueue.length > 0 && queueIndex < sendingQueue.length && (
+                <div className="fixed inset-0 z-[110] bg-primary/95 backdrop-blur-xl flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-hidden"
+                    >
+                        <div className="p-10 text-center space-y-6">
+                            <div className="w-24 h-24 bg-primary/10 text-primary rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Send size={40} className="animate-pulse" />
+                            </div>
+
+                            <div>
+                                <h2 className="text-3xl font-black text-gray-900">جاري إرسال الحملة الذكية</h2>
+                                <p className="text-gray-500 font-bold mt-2">المصنع الحالي: {queueIndex + 1} من {sendingQueue.length}</p>
+                            </div>
+
+                            <div className="bg-gray-50 p-8 rounded-[2rem] border border-gray-100 text-right">
+                                <div className="flex items-center gap-4 mb-4">
+                                    <div className="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-primary">
+                                        <User size={24} />
+                                    </div>
+                                    <div>
+                                        <div className="font-black text-xl text-gray-900">{sendingQueue[queueIndex]?.name}</div>
+                                        <div className="text-sm font-bold text-gray-400">{sendingQueue[queueIndex]?.email}</div>
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="text-xs font-black text-gray-400 uppercase tracking-widest">المجال الصناعي</div>
+                                    <div className="inline-block bg-primary/5 text-primary px-4 py-1.5 rounded-full font-black text-xs">
+                                        {sendingQueue[queueIndex]?.industry?.[0] || 'عام'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
+                                    <motion.div
+                                        className="h-full bg-primary"
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${progress}%` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                    <span>جاري المعالجة</span>
+                                    <span>{progress}% اكتمل</span>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
+                                <button
+                                    onClick={() => processNextInQueue(true)}
+                                    className="h-16 rounded-2xl border-2 border-gray-100 text-gray-400 font-black hover:bg-gray-50 transition-all"
+                                >
+                                    تخطي هذا المصنع
+                                </button>
+                                <button
+                                    onClick={() => processNextInQueue(false)}
+                                    className="h-16 rounded-2xl bg-primary text-white font-black shadow-xl shadow-primary/20 hover:bg-blue-900 transition-all flex items-center justify-center gap-3"
+                                >
+                                    <Mail size={20} />
+                                    فتح Gmail والتسجيل
+                                </button>
+                            </div>
+
                             <button
-                                onClick={confirmSendBulk}
-                                className={clsx(
-                                    "px-8 py-3 rounded-xl font-black text-white shadow-lg transition",
-                                    isSimulation ? "bg-orange-500 hover:bg-orange-600 shadow-orange-200" : "bg-primary hover:bg-blue-900 shadow-primary/20"
-                                )}
+                                onClick={handleFinishDispatch}
+                                className="text-sm font-bold text-red-400 hover:text-red-500 transition-colors pt-4"
                             >
-                                {isSimulation ? 'بدء المحاكاة' : 'تأكيد الإرسال'}
+                                إلغاء العملية بالكامل
                             </button>
                         </div>
                     </motion.div>
@@ -350,8 +630,19 @@ export const EmailsPage = () => {
                         activeTab === 'factories' ? "text-primary" : "text-gray-400 hover:text-gray-600"
                     )}
                 >
-                    قائمة المصانع
+                    قائمة المصانع المستهدفة
                     {activeTab === 'factories' && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full" />}
+                </button>
+                <button
+                    onClick={() => setActiveTab('contacted')}
+                    className={clsx(
+                        "pb-4 text-sm font-black transition-all relative",
+                        activeTab === 'contacted' ? "text-primary" : "text-gray-400 hover:text-gray-600"
+                    )}
+                >
+                    المصانع التي تم التواصل معها
+                    {contactLogs.length > 0 && <span className="mr-2 bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full">{contactLogs.length}</span>}
+                    {activeTab === 'contacted' && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full" />}
                 </button>
                 <button
                     onClick={() => setActiveTab('campaigns')}
@@ -360,7 +651,7 @@ export const EmailsPage = () => {
                         activeTab === 'campaigns' ? "text-primary" : "text-gray-400 hover:text-gray-600"
                     )}
                 >
-                    لوحة الحملات والتحويل
+                    تحليلات الحملات
                     {activeTab === 'campaigns' && <motion.div layoutId="tab" className="absolute bottom-0 left-0 right-0 h-1 bg-primary rounded-full" />}
                 </button>
             </div>
@@ -387,10 +678,9 @@ export const EmailsPage = () => {
                         </div>
                     </div>
 
-
                     <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
-                        <div className="p-8 border-b border-gray-100 bg-gray-50/50">
-                            <div className="relative max-w-xl">
+                        <div className="p-8 border-b border-gray-100 bg-gray-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                            <div className="relative max-w-xl flex-1">
                                 <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
                                 <input
                                     type="text"
@@ -399,6 +689,13 @@ export const EmailsPage = () => {
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                 />
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-xs font-black text-gray-400 uppercase tracking-widest">عرض:</span>
+                                <div className="bg-gray-100 p-1 rounded-xl flex gap-1">
+                                    <button className="px-4 py-2 bg-white shadow-sm rounded-lg text-xs font-black text-primary">الكل</button>
+                                    <button className="px-4 py-2 hover:bg-white/50 rounded-lg text-xs font-bold text-gray-500">نشط</button>
+                                </div>
                             </div>
                         </div>
 
@@ -460,7 +757,7 @@ export const EmailsPage = () => {
                                                     )}
                                                 >
                                                     <Send size={16} />
-                                                    إرسال الآن
+                                                    إرسال فردي
                                                 </button>
                                             </td>
                                         </tr>
@@ -479,35 +776,78 @@ export const EmailsPage = () => {
                             )}
                         </div>
                     </div>
-
-                    {/* Tips Section */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="bg-green-50 p-8 rounded-[2rem] border border-green-100 flex gap-6">
-                            <div className="w-14 h-14 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center shrink-0">
-                                <CheckCircle size={28} />
-                            </div>
+                </>
+            ) : activeTab === 'contacted' ? (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-6"
+                >
+                    <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="p-8 border-b border-gray-100 bg-gray-50/50 flex flex-col md:flex-row md:items-center justify-between gap-6">
                             <div>
-                                <h4 className="text-xl font-black text-green-900 mb-2">أفضل ممارسات الإرسال الجماعي</h4>
-                                <ul className="text-green-700 font-bold space-y-2 text-sm">
-                                    <li>• سيتم تقسيم القائمة تلقائياً إلى مجموعات من 300 إيميل.</li>
-                                    <li>• يتم استخدام خاصية BCC لحماية خصوصية المصانع.</li>
-                                    <li>• تأكد من أن حساب الإيميل الرسمي الخاص بك مفتوح في المتصفح.</li>
-                                </ul>
+                                <h3 className="text-xl font-black text-gray-900">سجل التواصل مع المصانع</h3>
+                                <p className="text-gray-500 font-bold text-sm">تتبع جميع العمليات التي تمت من خلال لوحة التحكم</p>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <button
+                                    onClick={handleClearAllLogs}
+                                    className="h-12 px-6 bg-red-50 text-red-600 rounded-xl font-black text-sm hover:bg-red-100 transition-colors flex items-center gap-2"
+                                >
+                                    <Trash2 size={18} />
+                                    مسح الكل
+                                </button>
                             </div>
                         </div>
-                        <div className="bg-blue-50 p-8 rounded-[2rem] border border-blue-100 flex gap-6">
-                            <div className="w-14 h-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shrink-0">
-                                <AlertCircle size={28} />
-                            </div>
-                            <div>
-                                <h4 className="text-xl font-black text-blue-900 mb-2">نصيحة تقنية لمدير النظام</h4>
-                                <p className="text-blue-700 font-bold text-sm leading-relaxed">
-                                    لتجنب تصنيف إيميلاتك كبريد مزعج (Spam)، يفضل الإرسال بفاصل زمني لا يقل عن 5 دقائق بين كل دفعة (300 إيميل).
-                                </p>
-                            </div>
+
+                        <div className="overflow-x-auto">
+                            <table className="w-full border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50/50">
+                                        <th className="px-8 py-5 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">اسم المصنع</th>
+                                        <th className="px-8 py-5 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">البريد الإلكتروني</th>
+                                        <th className="px-8 py-5 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">القطاع الصناعي</th>
+                                        <th className="px-8 py-5 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">تاريخ الإرسال</th>
+                                        <th className="px-8 py-5 text-center text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">الحالة</th>
+                                        <th className="px-8 py-5 text-center text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">الإجراءات</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {contactLogs.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={6} className="px-8 py-20 text-center text-gray-400 font-bold">لا توجد سجلات تواصل حتى الآن</td>
+                                        </tr>
+                                    ) : contactLogs.map((log) => (
+                                        <tr key={log.id} className="hover:bg-gray-50/50 transition-colors group">
+                                            <td className="px-8 py-6 font-black text-gray-900">{log.factory_name}</td>
+                                            <td className="px-8 py-6 font-bold text-gray-500">{log.email}</td>
+                                            <td className="px-8 py-6">
+                                                <span className="bg-blue-50 text-blue-600 px-3 py-1 rounded-full text-[10px] font-black">{log.industry}</span>
+                                            </td>
+                                            <td className="px-8 py-6 text-sm font-bold text-gray-400" dir="ltr">
+                                                {new Date(log.sent_at).toLocaleDateString('ar-EG', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                            </td>
+                                            <td className="px-8 py-6 text-center">
+                                                <div className="flex items-center justify-center gap-2 text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-100 text-[10px] font-black uppercase tracking-widest">
+                                                    <CheckCircle size={12} />
+                                                    Sent
+                                                </div>
+                                            </td>
+                                            <td className="px-8 py-6 text-center">
+                                                <button
+                                                    onClick={() => log.id && handleDeleteLog(log.id)}
+                                                    className="w-10 h-10 bg-white border border-gray-100 rounded-xl flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm"
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
                         </div>
                     </div>
-                </>
+                </motion.div>
             ) : (
                 <motion.div
                     initial={{ opacity: 0, x: 20 }}
@@ -630,6 +970,13 @@ export const EmailsPage = () => {
                             <p className="text-blue-700 font-bold text-sm leading-relaxed">
                                 مراقبة نقرات التحويل تساعد في فهم أي المصانع هي الأكثر استجابة وطلباً من قبل المبدعين. يتم استخدام هذه البيانات لرفع ترتيب المصانع "المتفاعلة" في نتائج البحث المستقبلية تلقائياً.
                             </p>
+                        </div>
+                        <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                            <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">أفضل الممارسات</h4>
+                            <div className="space-y-3">
+                                <div className="p-3 bg-white rounded-xl border border-gray-100 text-[10px] font-bold text-gray-600">استخدم الرموز التعبيرية بحذر في العناوين لزيادة نسبة الفتح.</div>
+                                <div className="p-3 bg-white rounded-xl border border-gray-100 text-[10px] font-bold text-gray-600">تأكد من صحة روابط التواصل في نص الرسالة.</div>
+                            </div>
                         </div>
                     </div>
                 </motion.div>

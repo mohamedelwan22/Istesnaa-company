@@ -28,3 +28,13 @@ export interface Invention {
     analysis_result?: any;
     created_at: string;
 }
+export interface ContactLog {
+    id?: string;
+    factory_id: string;
+    factory_name: string;
+    email: string;
+    industry: string;
+    sent_at: string;
+    status: 'Sent' | 'Failed' | 'Pending';
+    error_reason?: string;
+}
