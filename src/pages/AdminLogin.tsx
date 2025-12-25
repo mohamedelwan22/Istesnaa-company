@@ -11,7 +11,8 @@ export const AdminLogin = () => {
 
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
-        if (password === '0000') {
+        const storedPassword = localStorage.getItem('adminPassword') || '0000';
+        if (password === storedPassword) {
             localStorage.setItem('isAdmin', 'true');
             navigate('/admin/dashboard');
         } else {

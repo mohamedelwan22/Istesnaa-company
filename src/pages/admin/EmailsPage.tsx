@@ -488,7 +488,7 @@ export const EmailsPage = () => {
                                                     <div className="text-[10px] font-bold text-gray-400">{f.email}</div>
                                                 </div>
                                                 {f.industry?.[0] && (
-                                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full whitespace-nowrap">{f.industry[0]}</span>
+                                                    <span className="text-[10px] font-black bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full whitespace-nowrap">القطاع: {f.industry[0]}</span>
                                                 )}
                                             </div>
                                         ))}
@@ -723,7 +723,7 @@ export const EmailsPage = () => {
                                                     </div>
                                                     <div>
                                                         <div className="font-black text-gray-900 text-lg">{factory.name || <span className="text-gray-300 italic">منشأة غير مسماة</span>}</div>
-                                                        <div className="text-xs font-bold text-gray-400">{factory.industry?.[0] || 'مجال غير محدد'}</div>
+                                                        <div className="text-xs font-bold text-gray-400">القطاع: {factory.industry?.[0] || 'مجال غير محدد'}</div>
                                                     </div>
                                                 </div>
                                             </td>
