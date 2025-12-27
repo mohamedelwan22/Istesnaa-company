@@ -1,8 +1,6 @@
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { AdminLayout } from '../components/AdminLayout';
-import { UploadPage, FactoriesPage, InventionsPage, EmailsPage, DeduplicationPage, CompatibleFactoriesPage, SettingsPage } from './admin';
-
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase';
 import { Factory as FactoryIcon, Lightbulb, TrendingUp, History, Package, MapPin, Search, Star } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -44,28 +42,18 @@ const DashboardHome = () => {
                 .order('created_at', { ascending: false })
                 .limit(5);
 
-            // 3. Get all factory metadata for charts (paginate through 4k+ records)
-            let allFactories: any[] = [];
-            let fFrom = 0;
-            let fTo = 999;
-            let fHasMore = true;
+            // 3. Get representative factory metadata for charts (limit to first 1000 for performance)
+            const { data: allFactories, error: fErr } = await supabase
+                .from('factories')
+                .select('batch_name, industry, city')
+                .order('created_at', { ascending: false })
+                .range(0, 1000);
 
-            while (fHasMore) {
-                const { data, error: fErr } = await supabase
-                    .from('factories')
-                    .select('batch_name, industry, city')
-                    .range(fFrom, fTo);
-
-                if (fErr) break;
-                if (data && data.length > 0) {
-                    allFactories = [...allFactories, ...data];
-                    if (data.length < 1000) fHasMore = false;
-                    else { fFrom += 1000; fTo += 1000; }
-                } else fHasMore = false;
-            }
+            if (fErr) console.error('Error fetching factories for charts:', fErr);
+            const factoriesData = allFactories || [];
 
             // Compute Batches
-            const batchCounts = allFactories.reduce((acc: any, curr: any) => {
+            const batchCounts = factoriesData.reduce((acc: any, curr: any) => {
                 const name = curr.batch_name || 'غير مصنف';
                 acc[name] = (acc[name] || 0) + 1;
                 return acc;
@@ -77,7 +65,7 @@ const DashboardHome = () => {
                 .slice(0, 4);
 
             // Compute Industries
-            const indCounts = allFactories.reduce((acc: any, curr: any) => {
+            const indCounts = factoriesData.reduce((acc: any, curr: any) => {
                 if (Array.isArray(curr.industry)) {
                     curr.industry.forEach((ind: string) => {
                         acc[ind] = (acc[ind] || 0) + 1;
@@ -92,7 +80,7 @@ const DashboardHome = () => {
                 .slice(0, 5);
 
             // Compute Cities
-            const cityCounts = allFactories.reduce((acc: any, curr: any) => {
+            const cityCounts = factoriesData.reduce((acc: any, curr: any) => {
                 const name = curr.city || 'غير محدد';
                 acc[name] = (acc[name] || 0) + 1;
                 return acc;
@@ -363,19 +351,36 @@ const DashboardHome = () => {
     );
 };
 
+// Lazy load admin pages
+const UploadPage = lazy(() => import('./admin/UploadPage').then(module => ({ default: module.UploadPage })));
+const FactoriesPage = lazy(() => import('./admin/FactoriesPage').then(module => ({ default: module.FactoriesPage })));
+const InventionsPage = lazy(() => import('./admin/InventionsPage').then(module => ({ default: module.InventionsPage })));
+const EmailsPage = lazy(() => import('./admin/EmailsPage').then(module => ({ default: module.EmailsPage })));
+const DeduplicationPage = lazy(() => import('./admin/DeduplicationPage').then(module => ({ default: module.DeduplicationPage })));
+const CompatibleFactoriesPage = lazy(() => import('./admin/CompatibleFactoriesPage').then(module => ({ default: module.CompatibleFactoriesPage })));
+const SettingsPage = lazy(() => import('./admin/SettingsPage').then(module => ({ default: module.SettingsPage })));
+
+const LoadingSpinner = () => (
+    <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+    </div>
+);
+
 export const AdminDashboard = () => {
     return (
-        <Routes>
-            <Route element={<AdminLayout />}>
-                <Route index element={<DashboardHome />} />
-                <Route path="upload" element={<UploadPage />} />
-                <Route path="factories" element={<FactoriesPage />} />
-                <Route path="approved" element={<CompatibleFactoriesPage />} />
-                <Route path="inventions" element={<InventionsPage />} />
-                <Route path="emails" element={<EmailsPage />} />
-                <Route path="deduplication" element={<DeduplicationPage />} />
-                <Route path="settings" element={<SettingsPage />} />
-            </Route>
-        </Routes>
+        <Suspense fallback={<LoadingSpinner />}>
+            <Routes>
+                <Route element={<AdminLayout />}>
+                    <Route index element={<DashboardHome />} />
+                    <Route path="upload" element={<UploadPage />} />
+                    <Route path="factories" element={<FactoriesPage />} />
+                    <Route path="approved" element={<CompatibleFactoriesPage />} />
+                    <Route path="inventions" element={<InventionsPage />} />
+                    <Route path="emails" element={<EmailsPage />} />
+                    <Route path="deduplication" element={<DeduplicationPage />} />
+                    <Route path="settings" element={<SettingsPage />} />
+                </Route>
+            </Routes>
+        </Suspense>
     );
 };

@@ -1,44 +1,64 @@
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { FeedbackService } from '../../services/FeedbackService';
-import type { Factory } from '../../types';
+import type { Factory, ContactLog } from '../../types';
 import { motion } from 'framer-motion';
 import {
-    Search, Mail, Send, Phone, User, CheckCircle,
-    Loader2, BarChart3,
-    MousePointer2, Clock, Eye, Trash2, X,
-    FileText, Paperclip, AlertTriangle
+    Search, Trash2, Mail, Phone, Plus, User, Send,
+    Loader2, Eye, X, FileText, Paperclip, CheckCircle,
+    Clock, AlertTriangle, MousePointer2, BarChart3,
+    Package, ChevronDown, ChevronUp
 } from 'lucide-react';
 import clsx from 'clsx';
-import { useState, useEffect } from 'react';
-import type { ContactLog } from '../../types';
 
 export const EmailsPage = () => {
-    const [factories, setFactories] = useState<Factory[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [batches, setBatches] = useState<{ id: string, name: string, count: number, loadedFactories?: Factory[] }[]>([]);
+    const [loadingBatches, setLoadingBatches] = useState(true);
+    const [visibleBatchCount, setVisibleBatchCount] = useState(5);
+    const [loadingBatchId, setLoadingBatchId] = useState<string | null>(null);
+    const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
     const [searchQuery, setSearchQuery] = useState('');
+
+    // Legacy support for any logic that expects a flat list (will be computed from loaded batches)
+    const factories = batches.flatMap(b => b.loadedFactories || []);
+
     const [sending, setSending] = useState(false);
     const [progress, setProgress] = useState(0);
     const [isSimulation, setIsSimulation] = useState(false);
     const [simulationLog, setSimulationLog] = useState<{ recipients: number, subject: string, batchCount: number } | null>(null);
     const [activeTab, setActiveTab] = useState<'factories' | 'campaigns' | 'contacted'>('factories');
     const [stats, setStats] = useState<{ total: number, byType: { whatsapp: number, email: number } } | null>(null);
+    const [totalFactoryCount, setTotalFactoryCount] = useState(0);
 
     // New State for Bulk Email Flow
     const [contactLogs, setContactLogs] = useState<ContactLog[]>([]);
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const [attachmentLinks, setAttachmentLinks] = useState<{ name: string, url: string }[]>([]);
     const [emailTemplate, setEmailTemplate] = useState({
         subject: 'فرصة تصنيع وتوريد جديدة - منصة استصناع',
         body: `مرحباً {factory_name}،\n\nنود إفادتكم بوجود طلبات تصنيع جديدة في قطاع {industry} توافق تخصصاتكم...\n\nتحياتنا، فريق استصناع.`,
-        attachments: [{ name: 'Project_Brief.pdf', size: '1.2MB' }] // Placeholder attachments
     });
     const [showPreview, setShowPreview] = useState(false);
     const [isDispatching, setIsDispatching] = useState(false);
     const [sendingQueue, setSendingQueue] = useState<Factory[]>([]);
     const [queueIndex, setQueueIndex] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
 
     useEffect(() => {
-        fetchFactories();
+        fetchBatchMetadata();
         loadStats();
         fetchContactLogs();
+    }, []);
+
+    // Also fetch initial count for stats
+    useEffect(() => {
+        const getCount = async () => {
+            const { count } = await supabase
+                .from('factories')
+                .select('*', { count: 'exact', head: true });
+            setTotalFactoryCount(count || 0);
+        };
+        getCount();
     }, []);
 
     const loadStats = async () => {
@@ -66,56 +86,85 @@ export const EmailsPage = () => {
     };
 
 
-    const fetchFactories = async () => {
-        setLoading(true);
+    useEffect(() => {
+        fetchBatchMetadata();
+        loadStats();
+        fetchContactLogs();
+    }, []);
+
+    const fetchBatchMetadata = async () => {
+        setLoadingBatches(true);
         try {
-            let allFactories: Factory[] = [];
-            let from = 0;
-            let to = 999;
-            let hasMore = true;
-
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from('factories')
-                    .select('*')
-                    .range(from, to)
-                    .order('name', { ascending: true });
-
-                if (error) throw error;
-
-                if (data && data.length > 0) {
-                    allFactories = [...allFactories, ...data];
-                    if (data.length < 1000) {
-                        hasMore = false;
-                    } else {
-                        from += 1000;
-                        to += 1000;
-                    }
-                } else {
-                    hasMore = false;
-                }
+            const { data, error } = await supabase.from('factories').select('batch_id, batch_name');
+            if (error) throw error;
+            if (data) {
+                const counts: Record<string, { name: string, count: number }> = {};
+                data.forEach(f => {
+                    const id = f.batch_id || 'no-batch';
+                    if (!counts[id]) counts[id] = { name: f.batch_name || 'مصانع بدون مجموعة', count: 0 };
+                    counts[id].count++;
+                });
+                const list = Object.entries(counts).map(([id, info]) => ({ id, name: info.name, count: info.count }));
+                setBatches(list);
             }
-            // Filter out junk rows (empty rows from excel)
-            const cleaned = allFactories.filter(f =>
-                (f.name && f.name.trim() !== '') ||
-                (f.email && f.email.trim() !== '') ||
-                (f.phone && f.phone.toString().trim() !== '')
-            );
-            setFactories(cleaned);
         } catch (err) {
-            console.error('Error fetching factories:', err);
+            console.error('Error fetching batch metadata:', err);
         } finally {
-            setLoading(false);
+            setLoadingBatches(false);
         }
     };
 
-    const filteredFactories = factories
-        .filter(f => (f.name && f.name.trim() !== '') || (f.email || f.phone)) // Must have at least a name or contact info
-        .filter(f =>
-            f.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            f.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            f.industry?.some(ind => ind.toLowerCase().includes(searchQuery.toLowerCase()))
-        );
+    const fetchFactoriesInBatch = async (batchId: string) => {
+        if (batches.find(b => b.id === batchId)?.loadedFactories) return;
+        setLoadingBatchId(batchId);
+        try {
+            let query = supabase
+                .from('factories')
+                .select('id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code');
+
+            if (batchId === 'no-batch') {
+                query = query.is('batch_id', null);
+            } else {
+                query = query.eq('batch_id', batchId);
+            }
+
+            const { data, error } = await query.order('name', { ascending: true });
+
+            if (error) throw error;
+            setBatches(prev => prev.map(b => b.id === batchId ? { ...b, loadedFactories: data || [] } : b));
+        } catch (err) {
+            console.error('Error fetching factories:', err);
+        } finally {
+            setLoadingBatchId(null);
+        }
+    };
+
+    // Debounced search (visual only for now as we have limited data loaded)
+    // For a production app with 4k+ records, we should search server-side
+    // But keeping it client-side for "loaded" results to match behavior
+
+    const filteredBatches = batches.filter(b =>
+        (b.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        b.loadedFactories?.some(f => (f.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+
+    const visibleBatches = filteredBatches.slice(0, visibleBatchCount);
+    const hasMoreBatches = visibleBatches.length < filteredBatches.length;
+
+    const toggleBatchExpand = async (batchId: string) => {
+        const newExpanded = new Set(expandedBatches);
+        if (newExpanded.has(batchId)) {
+            newExpanded.delete(batchId);
+        } else {
+            newExpanded.add(batchId);
+            await fetchFactoriesInBatch(batchId);
+        }
+        setExpandedBatches(newExpanded);
+    };
+
+    const handleLoadMoreBatches = () => {
+        setVisibleBatchCount(prev => prev + 5);
+    };
 
     const handleSendIndividual = async (factory: Factory) => {
         if (!factory.email) return;
@@ -156,10 +205,59 @@ export const EmailsPage = () => {
 
     const industries = Array.from(new Set(factories.flatMap(f => f.industry || []))).filter(Boolean);
 
-    const tokenize = (text: string, factory: Factory) => {
-        return text
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            setSelectedFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+        }
+    };
+
+    const removeFile = (index: number) => {
+        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const uploadFiles = async () => {
+        if (selectedFiles.length === 0) return [];
+        setIsUploading(true);
+        const links: { name: string, url: string }[] = [];
+
+        try {
+            for (const file of selectedFiles) {
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+                const filePath = `attachments/${fileName}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('email-attachments')
+                    .upload(filePath, file);
+
+                if (uploadError) throw uploadError;
+
+                const { data: { publicUrl } } = supabase.storage
+                    .from('email-attachments')
+                    .getPublicUrl(filePath);
+
+                links.push({ name: file.name, url: publicUrl });
+            }
+            setAttachmentLinks(links);
+            return links;
+        } catch (error) {
+            console.error('Error uploading files:', error);
+            alert('فشل رفع الملفات. تأكد من وجود صلاحيات الوصول لـ Supabase Storage.');
+            return [];
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    const tokenize = (text: string, factory: Factory, links: { name: string, url: string }[] = []) => {
+        let result = text
             .replace(/{factory_name}/g, factory.name || 'عميلنا العزيز')
             .replace(/{industry}/g, factory.industry?.[0] || 'قطاعكم الصناعي');
+
+        if (links.length > 0) {
+            result += '\n\nالمرفقات:\n' + links.map(l => `${l.name}: ${l.url}`).join('\n');
+        }
+        return result;
     };
 
     const confirmSendBulk = async () => {
@@ -168,11 +266,18 @@ export const EmailsPage = () => {
 
         if (targetList.length === 0) return;
 
+        setSending(true);
+        const uploadedLinks = await uploadFiles();
+
+        if (selectedFiles.length > 0 && uploadedLinks.length === 0) {
+            setSending(false);
+            return; // Error occurred during upload
+        }
+
         setSendingQueue(targetList);
         setQueueIndex(0);
         setShowPreview(false);
         setIsDispatching(true);
-        setSending(true);
         setProgress(0);
     };
 
@@ -186,17 +291,17 @@ export const EmailsPage = () => {
 
         if (!skip) {
             const tokenizedSubject = tokenize(emailTemplate.subject, factory);
-            const tokenizedBody = tokenize(emailTemplate.body, factory);
+            const tokenizedBody = tokenize(emailTemplate.body, factory, attachmentLinks);
 
             if (isSimulation) {
                 console.log(`[Simulation] Sending to ${factory.email}: ${tokenizedSubject}`);
             } else {
                 // Individualized Gmail Link
-                const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${factory.email}&su=${encodeURIComponent(tokenizedSubject)}&body=${encodeURIComponent(tokenizedBody)}&from=partnerships@estesnaa.com`;
+                const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${factory.email}&su=${encodeURIComponent(tokenizedSubject)}&body=${encodeURIComponent(tokenizedBody)}`;
                 window.open(gmailLink, '_blank');
             }
 
-            // ONLY LOG IF NOT SKIPPED
+            // LOG IMMEDIATELY AFTER OPENING WINDOW
             const newLog: ContactLog = {
                 factory_id: factory.id || 'unknown',
                 factory_name: factory.name || 'غير مسمى',
@@ -328,9 +433,9 @@ export const EmailsPage = () => {
                         onChange={(e) => setSelectedIndustry(e.target.value)}
                         className="h-14 px-4 bg-white border border-gray-200 rounded-2xl font-bold text-gray-700 outline-none focus:border-primary"
                     >
-                        <option value="all">كل القطاعات ({factories.filter(f => f.email).length})</option>
+                        <option value="all">كل القطاعات ({totalFactoryCount})</option>
                         {industries.map(ind => (
-                            <option key={ind} value={ind}>{ind} ({factories.filter(f => f.email && f.industry?.includes(ind)).length})</option>
+                            <option key={ind} value={ind}>{ind}</option>
                         ))}
                     </select>
 
@@ -428,29 +533,32 @@ export const EmailsPage = () => {
                                         <Paperclip size={14} /> المرفقات (Attachments)
                                     </label>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {emailTemplate.attachments.map((file, idx) => (
+                                        {selectedFiles.map((file, idx) => (
                                             <div key={idx} className="p-4 bg-blue-50/50 border border-blue-100 rounded-2xl flex items-center gap-4 group">
                                                 <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
                                                     <FileText size={18} />
                                                 </div>
                                                 <div className="flex-1 overflow-hidden">
                                                     <div className="font-bold text-sm text-gray-900 truncate">{file.name}</div>
-                                                    <div className="text-[10px] text-gray-500">{file.size}</div>
+                                                    <div className="text-[10px] text-gray-500">{(file.size / (1024 * 1024)).toFixed(2)} MB</div>
                                                 </div>
                                                 <button
-                                                    onClick={() => setEmailTemplate({
-                                                        ...emailTemplate,
-                                                        attachments: emailTemplate.attachments.filter((_, i) => i !== idx)
-                                                    })}
+                                                    onClick={() => removeFile(idx)}
                                                     className="text-gray-400 hover:text-red-500 transition-colors"
                                                 >
                                                     <Trash2 size={16} />
                                                 </button>
                                             </div>
                                         ))}
-                                        <button className="p-4 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center gap-2 text-gray-400 font-bold hover:border-primary hover:text-primary transition-all">
+                                        <label className="p-4 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center gap-2 text-gray-400 font-bold hover:border-primary hover:text-primary transition-all cursor-pointer">
                                             <Paperclip size={18} /> إضافة ملف جديد
-                                        </button>
+                                            <input
+                                                type="file"
+                                                multiple
+                                                onChange={handleFileSelect}
+                                                className="hidden"
+                                            />
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -504,13 +612,15 @@ export const EmailsPage = () => {
                                     )}
                                     <button
                                         onClick={confirmSendBulk}
+                                        disabled={sending || isUploading}
                                         className={clsx(
                                             "w-full h-16 rounded-2xl font-black text-white shadow-xl flex items-center justify-center gap-3 transition-all",
-                                            isSimulation ? "bg-orange-500 hover:bg-orange-600 shadow-orange-100" : "bg-primary hover:bg-blue-900 shadow-primary/20"
+                                            (sending || isUploading) ? "bg-gray-400 cursor-not-allowed" :
+                                                isSimulation ? "bg-orange-500 hover:bg-orange-600 shadow-orange-100" : "bg-primary hover:bg-blue-900 shadow-primary/20"
                                         )}
                                     >
-                                        <Send size={24} />
-                                        {isSimulation ? 'بدء محاكاة الإرسال الذكي' : 'تأكيد البدء بالإرسال الجماعي'}
+                                        {isUploading ? <Loader2 className="animate-spin" size={24} /> : <Send size={24} />}
+                                        {isUploading ? 'جاري رفع الملفات...' : isSimulation ? 'بدء محاكاة الإرسال الذكي' : 'تأكيد البدء بالإرسال الجماعي'}
                                     </button>
                                 </div>
                             </div>
@@ -581,7 +691,7 @@ export const EmailsPage = () => {
                                     className="h-16 rounded-2xl bg-primary text-white font-black shadow-xl shadow-primary/20 hover:bg-blue-900 transition-all flex items-center justify-center gap-3"
                                 >
                                     <Mail size={20} />
-                                    فتح Gmail والتسجيل
+                                    فتح Gmail والانتقال للتالي
                                 </button>
                             </div>
 
@@ -660,19 +770,19 @@ export const EmailsPage = () => {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                             <p className="text-xs font-black text-gray-400 uppercase mb-2">إجمالي المصانع</p>
+                            <p className="text-3xl font-black text-gray-900">{totalFactoryCount.toLocaleString()}</p>
+                        </div>
+                        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                            <p className="text-xs font-black text-green-500 uppercase mb-2">تم تحميلها</p>
                             <p className="text-3xl font-black text-gray-900">{factories.length}</p>
                         </div>
                         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                            <p className="text-xs font-black text-green-500 uppercase mb-2">بإيميل مسجل</p>
+                            <p className="text-xs font-black text-blue-500 uppercase mb-2">بإيميل مسجل (المحملة)</p>
                             <p className="text-3xl font-black text-gray-900">{factories.filter(f => f.email).length}</p>
                         </div>
                         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                            <p className="text-xs font-black text-blue-500 uppercase mb-2">برقم هاتف</p>
+                            <p className="text-xs font-black text-orange-500 uppercase mb-2">رقم الهاتف (المحملة)</p>
                             <p className="text-3xl font-black text-gray-900">{factories.filter(f => f.phone).length}</p>
-                        </div>
-                        <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                            <p className="text-xs font-black text-orange-500 uppercase mb-2">بيانات ناقصة</p>
-                            <p className="text-3xl font-black text-gray-900">{factories.filter(f => !f.email || !f.phone).length}</p>
                         </div>
                     </div>
 
@@ -701,69 +811,114 @@ export const EmailsPage = () => {
                             <table className="w-full border-collapse">
                                 <thead>
                                     <tr className="bg-gray-50/50">
-                                        <th className="px-8 py-5 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">المنشأة الصناعية</th>
+                                        <th className="px-8 py-5 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">المجموعة / المنشأة</th>
                                         <th className="px-8 py-5 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">رقم الهاتف</th>
                                         <th className="px-8 py-5 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">البريد الإلكتروني</th>
                                         <th className="px-8 py-5 text-center text-xs font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">الإجراءات</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100">
-                                    {loading ? (
+                                    {loadingBatches && batches.length === 0 ? (
                                         Array.from({ length: 5 }).map((_, i) => (
                                             <tr key={i} className="animate-pulse">
                                                 <td colSpan={4} className="px-8 py-6"><div className="h-8 bg-gray-100 rounded-xl w-full" /></td>
                                             </tr>
                                         ))
-                                    ) : filteredFactories.map((factory) => (
-                                        <tr key={factory.id} className="hover:bg-gray-50/80 transition-colors group">
-                                            <td className="px-8 py-6">
-                                                <div className="flex items-center gap-4">
-                                                    <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                                                        <User size={20} />
+                                    ) : visibleBatches.map((batch) => (
+                                        <React.Fragment key={batch.id}>
+                                            <tr className="bg-blue-50/30 hover:bg-blue-50/50 transition-colors">
+                                                <td className="px-8 py-4" colSpan={3}>
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="w-10 h-10 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
+                                                            <Package size={20} />
+                                                        </div>
+                                                        <div>
+                                                            <div className="font-black text-gray-900">{batch.name}</div>
+                                                            <div className="text-xs font-bold text-gray-400">{batch.count} منشأة صناعية</div>
+                                                        </div>
                                                     </div>
-                                                    <div>
-                                                        <div className="font-black text-gray-900 text-lg">{factory.name || <span className="text-gray-300 italic">منشأة غير مسماة</span>}</div>
-                                                        <div className="text-xs font-bold text-gray-400">القطاع: {factory.industry?.[0] || 'مجال غير محدد'}</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-6">
-                                                <div className="flex items-center gap-2 text-gray-600 font-bold">
-                                                    <Phone size={16} className="text-gray-400" />
-                                                    <span dir="ltr">{factory.phone || <span className="text-orange-400 text-xs">غير موجود</span>}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-6">
-                                                <div className="flex items-center gap-2 text-gray-600 font-bold">
-                                                    <Mail size={16} className="text-gray-400" />
-                                                    {factory.email ? (
-                                                        <span className="text-blue-600">{factory.email}</span>
-                                                    ) : (
-                                                        <span className="text-orange-400 text-xs">غير موجود</span>
-                                                    )}
-                                                </div>
-                                            </td>
-                                            <td className="px-8 py-6 text-center">
-                                                <button
-                                                    onClick={() => handleSendIndividual(factory)}
-                                                    disabled={!factory.email}
-                                                    className={clsx(
-                                                        "h-11 px-6 rounded-xl font-black text-sm flex items-center gap-2 mx-auto transition-all",
-                                                        factory.email
-                                                            ? "bg-white border-2 border-gray-200 text-gray-700 hover:border-primary hover:text-primary"
-                                                            : "bg-gray-50 text-gray-300 cursor-not-allowed border-none"
-                                                    )}
-                                                >
-                                                    <Send size={16} />
-                                                    إرسال فردي
-                                                </button>
-                                            </td>
-                                        </tr>
+                                                </td>
+                                                <td className="px-8 py-4 text-center">
+                                                    <button
+                                                        onClick={() => toggleBatchExpand(batch.id)}
+                                                        className="h-10 px-4 rounded-xl bg-white border border-gray-200 text-gray-600 font-bold text-xs hover:border-primary hover:text-primary transition-all flex items-center gap-2 mx-auto"
+                                                    >
+                                                        {loadingBatchId === batch.id ? (
+                                                            <Loader2 size={14} className="animate-spin" />
+                                                        ) : expandedBatches.has(batch.id) ? (
+                                                            <ChevronUp size={14} />
+                                                        ) : (
+                                                            <ChevronDown size={14} />
+                                                        )}
+                                                        {expandedBatches.has(batch.id) ? 'إغلاق' : 'عرض المصانع'}
+                                                    </button>
+                                                </td>
+                                            </tr>
+
+                                            {expandedBatches.has(batch.id) && batch.loadedFactories && batch.loadedFactories.map((factory) => (
+                                                <tr key={factory.id} className="hover:bg-gray-50/80 transition-colors group border-r-4 border-r-primary/10">
+                                                    <td className="px-8 py-6 pr-12">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="w-12 h-12 bg-gray-100 rounded-2xl flex items-center justify-center text-gray-400 group-hover:bg-primary/10 group-hover:text-primary transition-colors">
+                                                                <User size={20} />
+                                                            </div>
+                                                            <div>
+                                                                <div className="font-black text-gray-900 text-lg">{factory.name || <span className="text-gray-300 italic">منشأة غير مسماة</span>}</div>
+                                                                <div className="text-xs font-bold text-gray-400">القطاع: {factory.industry?.[0] || 'مجال غير محدد'}</div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div className="flex items-center gap-2 text-gray-600 font-bold">
+                                                            <Phone size={16} className="text-gray-400" />
+                                                            <span dir="ltr">{factory.phone || <span className="text-orange-400 text-xs">غير موجود</span>}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-6">
+                                                        <div className="flex items-center gap-2 text-gray-600 font-bold">
+                                                            <Mail size={16} className="text-gray-400" />
+                                                            {factory.email ? (
+                                                                <span className="text-blue-600 font-semibold">{factory.email}</span>
+                                                            ) : (
+                                                                <span className="text-orange-400 text-xs">غير موجود</span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-8 py-6 text-center">
+                                                        <button
+                                                            onClick={() => handleSendIndividual(factory)}
+                                                            disabled={!factory.email}
+                                                            className={clsx(
+                                                                "h-11 px-6 rounded-xl font-black text-sm flex items-center gap-2 mx-auto transition-all",
+                                                                factory.email
+                                                                    ? "bg-white border-2 border-gray-200 text-gray-700 hover:border-primary hover:text-primary"
+                                                                    : "bg-gray-50 text-gray-300 cursor-not-allowed border-none"
+                                                            )}
+                                                        >
+                                                            <Send size={16} />
+                                                            إرسال
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </React.Fragment>
                                     ))}
                                 </tbody>
                             </table>
 
-                            {!loading && filteredFactories.length === 0 && (
+                            {hasMoreBatches && (
+                                <div className="p-8 border-t border-gray-100 bg-gray-50/30 flex justify-center">
+                                    <button
+                                        onClick={handleLoadMoreBatches}
+                                        className="h-14 px-10 rounded-2xl bg-white border-2 border-gray-200 text-gray-700 font-black hover:border-primary hover:text-primary transition-all flex items-center gap-3 shadow-sm"
+                                    >
+                                        <Plus size={20} />
+                                        تحميل المزيد من المجموعات
+                                    </button>
+                                </div>
+                            )}
+
+                            {!loadingBatches && visibleBatches.length === 0 && (
                                 <div className="p-20 text-center">
                                     <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6 text-gray-300">
                                         <Mail size={40} />

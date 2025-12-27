@@ -77,7 +77,7 @@ export const UploadPage = () => {
                 batch_name: finalBatchName
             }));
 
-            const CHUNK_SIZE = 200;
+            const CHUNK_SIZE = 100; // Reduced chunk size for better responsiveness
             for (let i = 0; i < dataToInsert.length; i += CHUNK_SIZE) {
                 const chunk = dataToInsert.slice(i, i + CHUNK_SIZE);
                 const { error } = await supabase.from('factories').insert(chunk);
@@ -85,6 +85,9 @@ export const UploadPage = () => {
 
                 const currentProgress = Math.round(((i + chunk.length) / dataToInsert.length) * 100);
                 setUploadProgress(currentProgress);
+
+                // Yield to main thread to keep UI responsive
+                await new Promise(resolve => setTimeout(resolve, 0));
             }
 
             setStatus({

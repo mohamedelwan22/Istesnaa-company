@@ -1,91 +1,97 @@
-import { useEffect, useState } from 'react';
-import { Search, Trash2, Edit, Plus, Trash, ChevronDown, ChevronUp, CheckCircle, ShieldCheck } from 'lucide-react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import type { Factory } from '../../types';
 import { FactoryFormModal } from '../../components/FactoryFormModal';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
+import {
+    Search, Trash2, Edit, Plus, Trash, ChevronDown, ChevronUp,
+    Loader2
+} from 'lucide-react';
 
 export const FactoriesPage = () => {
-    const [factories, setFactories] = useState<Factory[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
-
-    // Modal states
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [editingFactory, setEditingFactory] = useState<Factory | null>(null);
+    const [batches, setBatches] = useState<{ id: string, name: string, count: number, loadedFactories?: Factory[] }[]>([]);
+    const [loadingBatches, setLoadingBatches] = useState(true);
+    const [visibleBatchCount, setVisibleBatchCount] = useState(10);
+    const [loadingBatchId, setLoadingBatchId] = useState<string | null>(null);
+    const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
+    const [searchQuery, setSearchQuery] = useState('');
+    const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
+    const [deleteAllConfirm, setDeleteAllConfirm] = useState('');
     const [deletingFactory, setDeletingFactory] = useState<Factory | null>(null);
     const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
-    const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
-    const [expandedBatches, setExpandedBatches] = useState<Set<string>>(new Set());
+    const [editingFactory, setEditingFactory] = useState<Factory | null>(null);
+    const [showFormModal, setShowFormModal] = useState(false);
 
     useEffect(() => {
-        fetchFactories();
+        fetchBatchMetadata();
     }, []);
 
-    const fetchFactories = async () => {
-        console.log('fetchFactories called');
-        setLoading(true);
+    const fetchBatchMetadata = async () => {
+        setLoadingBatches(true);
         try {
-            let allData: Factory[] = [];
-            let from = 0;
-            let to = 999;
-            let hasMore = true;
+            // Fetch batch info for all factories (selective columns only)
+            const { data, error } = await supabase
+                .from('factories')
+                .select('batch_id, batch_name');
 
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from('factories')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                    .range(from, to);
+            if (error) throw error;
 
-                if (error) throw error;
-
-                if (data && data.length > 0) {
-                    allData = [...allData, ...data];
-                    if (data.length < 1000) {
-                        hasMore = false;
-                    } else {
-                        from += 1000;
-                        to += 1000;
+            if (data) {
+                // Group by batch_id
+                const counts: Record<string, { name: string, count: number }> = {};
+                data.forEach(f => {
+                    const id = f.batch_id || 'no-batch';
+                    if (!counts[id]) {
+                        counts[id] = { name: f.batch_name || 'مصانع بدون مجموعة', count: 0 };
                     }
-                } else {
-                    hasMore = false;
-                }
-            }
+                    counts[id].count++;
+                });
 
-            console.log('Total factories fetched:', allData.length);
-            setFactories(allData);
+                const batchList = Object.entries(counts).map(([id, info]) => ({
+                    id,
+                    name: info.name,
+                    count: info.count
+                }));
+
+                setBatches(batchList);
+            }
         } catch (err) {
-            console.error('Fetch error:', err);
+            console.error('Error fetching batches:', err);
         } finally {
-            setLoading(false);
+            setLoadingBatches(false);
         }
     };
 
-    const filteredFactories = factories.filter(f =>
-        (f.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (f.industry || []).some(i => (i || '').toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (f.city || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const fetchFactoriesInBatch = async (batchId: string) => {
+        if (batches.find(b => b.id === batchId)?.loadedFactories) return;
 
-    // Group factories by batch
-    const factoriesByBatch = filteredFactories.reduce((acc, factory) => {
-        const batchKey = factory.batch_id || 'no-batch';
-        if (!acc[batchKey]) {
-            acc[batchKey] = {
-                id: factory.batch_id || '',
-                name: factory.batch_name || 'مصانع بدون مجموعة',
-                factories: []
-            };
+        setLoadingBatchId(batchId);
+        try {
+            let query = supabase
+                .from('factories')
+                .select('id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code, created_at');
+
+            if (batchId === 'no-batch') {
+                query = query.is('batch_id', null);
+            } else {
+                query = query.eq('batch_id', batchId);
+            }
+
+            const { data, error } = await query.order('name', { ascending: true });
+
+            if (error) throw error;
+
+            setBatches(prev => prev.map(b =>
+                b.id === batchId ? { ...b, loadedFactories: data || [] } : b
+            ));
+        } catch (err) {
+            console.error('Error fetching factories for batch:', err);
+        } finally {
+            setLoadingBatchId(null);
         }
-        acc[batchKey].factories.push(factory);
-        return acc;
-    }, {} as Record<string, { id: string; name: string; factories: Factory[] }>);
+    };
 
-    const batches = Object.values(factoriesByBatch);
-    const batchOptions = batches.filter(b => b.id).map(b => ({ id: b.id, name: b.name }));
-
-    const toggleBatchExpand = (batchId: string) => {
+    const toggleBatchExpand = async (batchId: string) => {
         setExpandedBatches(prev => {
             const next = new Set(prev);
             if (next.has(batchId)) {
@@ -95,45 +101,36 @@ export const FactoriesPage = () => {
             }
             return next;
         });
+
+        const batch = batches.find(b => b.id === batchId);
+        if (batch && !batch.loadedFactories) {
+            await fetchFactoriesInBatch(batchId);
+        }
     };
 
     // CRUD Operations
     const handleDeleteFactory = async () => {
         if (!deletingFactory) return;
 
-        console.log('Deleting factory:', deletingFactory.id || deletingFactory.factory_code);
         try {
             let query = supabase.from('factories').delete();
-
-            if (deletingFactory.id) {
-                query = query.eq('id', deletingFactory.id);
-            } else if (deletingFactory.factory_code) {
-                query = query.eq('factory_code', deletingFactory.factory_code);
-            } else {
-                return;
-            }
+            if (deletingFactory.id) query = query.eq('id', deletingFactory.id);
+            else if (deletingFactory.factory_code) query = query.eq('factory_code', deletingFactory.factory_code);
+            else return;
 
             const { error } = await query;
+            if (error) throw error;
 
-            if (error) {
-                console.error('Delete error:', error);
-                alert('حدث خطأ أثناء الحذف: ' + error.message);
-            } else {
-                console.log('Delete successful, updating local state');
-                // Optimistic update: use specific IDs and string conversion to be safe
-                setFactories(prev => {
-                    const next = prev.filter(f => {
-                        const isMatch = (deletingFactory.id && String(f.id) === String(deletingFactory.id)) ||
-                            (deletingFactory.factory_code && f.factory_code === deletingFactory.factory_code);
-                        return !isMatch;
-                    });
-                    console.log(`State updated: ${prev.length} -> ${next.length}`);
-                    return next;
-                });
-                setDeletingFactory(null);
-            }
+            setBatches(prev => prev.map(b => ({
+                ...b,
+                count: b.id === (deletingFactory.batch_id || 'no-batch') ? b.count - 1 : b.count,
+                loadedFactories: b.loadedFactories?.filter(f =>
+                    f.id !== deletingFactory.id && f.factory_code !== deletingFactory.factory_code
+                )
+            })));
+            setDeletingFactory(null);
         } catch (err) {
-            console.error('Delete exception:', err);
+            console.error('Delete error:', err);
         }
     };
 
@@ -141,305 +138,201 @@ export const FactoriesPage = () => {
         if (!deletingBatchId) return;
 
         try {
-            const { error } = await supabase
-                .from('factories')
-                .delete()
-                .eq('batch_id', deletingBatchId);
-
-            if (error) {
-                console.error('Delete batch error:', error);
-                alert('حدث خطأ أثناء حذف المجموعة: ' + error.message);
+            let query = supabase.from('factories').delete();
+            if (deletingBatchId === 'no-batch') {
+                query = query.is('batch_id', null);
             } else {
-                console.log('Delete batch successful, updating local state');
-                // Optimistic update
-                setFactories(prev => {
-                    const next = prev.filter(f => String(f.batch_id) !== String(deletingBatchId));
-                    console.log(`Batch state updated: ${prev.length} -> ${next.length}`);
-                    return next;
-                });
-                setDeletingBatchId(null);
+                query = query.eq('batch_id', deletingBatchId);
             }
+
+            const { error } = await query;
+            if (error) throw error;
+
+            setBatches(prev => prev.filter(b => b.id !== deletingBatchId));
+            setDeletingBatchId(null);
         } catch (err) {
-            console.error('Delete batch exception:', err);
-            alert('حدث خطأ أثناء حذف المجموعة');
+            console.error('Delete batch error:', err);
         }
     };
 
     const handleDeleteAll = async () => {
+        if (deleteAllConfirm !== 'DELETE ALL') return;
         try {
-            // Delete using factory_code which exists for all rows
             const { error } = await supabase
                 .from('factories')
                 .delete()
-                .not('factory_code', 'is', null);
+                .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete everything
 
-            if (error) {
-                console.error('Delete all error:', error);
-                alert('حدث خطأ أثناء حذف جميع البيانات: ' + error.message);
-                await fetchFactories();
-            } else {
-                console.log('Delete all successful, clearing local state');
-                setFactories([]); // Clear local state immediately
-                setShowDeleteAllDialog(false);
-            }
+            if (error) throw error;
+            setBatches([]);
+            setShowDeleteAllDialog(false);
+            setDeleteAllConfirm('');
         } catch (err) {
-            console.error('Delete all exception:', err);
-            alert('حدث خطأ أثناء حذف جميع البيانات');
+            console.error('Delete all error:', err);
         }
     };
 
-    const deletingBatch = batches.find(b => b.id === deletingBatchId);
+    const filteredBatches = batches.filter(b =>
+        (b.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        b.loadedFactories?.some(f => (f.name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+
+    const visibleBatches = filteredBatches.slice(0, visibleBatchCount);
+    const hasMore = visibleBatches.length < filteredBatches.length;
+
+    const batchOptions = batches.filter(b => b.id !== 'no-batch').map(b => ({ id: b.id, name: b.name }));
 
     return (
         <div className="space-y-6">
-            {/* Header with Actions */}
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold">إدارة المصانع</h2>
                     <div className="flex gap-4 text-sm mt-1">
                         <p className="text-gray-600">
-                            الإجمالي: <span className="font-semibold text-blue-600">{factories.length}</span>
+                            إجمالي المجموعات: <span className="font-semibold text-blue-600">{batches.length}</span>
                         </p>
-                        {searchTerm && (
-                            <p className="text-gray-600 border-r pr-4 border-gray-300">
-                                نتائج البحث: <span className="font-semibold text-green-600">{filteredFactories.length}</span>
-                            </p>
-                        )}
                     </div>
                 </div>
-                <div className="flex gap-3">
-                    <button
-                        onClick={() => setShowAddModal(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                    >
-                        <Plus size={20} />
-                        إضافة مصنع يدوياً
-                    </button>
-                </div>
+                <button
+                    onClick={() => setShowFormModal(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                >
+                    <Plus size={20} />
+                    إضافة مصنع يدوياً
+                </button>
             </div>
 
-            {/* Search and Batch Actions */}
             <div className="flex flex-col sm:flex-row gap-3">
                 <div className="relative flex-1">
                     <input
                         type="text"
-                        placeholder="بحث عن مصنع..."
-                        className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        placeholder="بحث عن مجموعة أو مصنع محمل..."
+                        className="w-full pl-10 pr-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary font-bold"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                     />
                     <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
                 </div>
 
-                <div className="flex gap-3 w-full sm:w-auto">
-                    {batchOptions.length > 0 && (
-                        <select
-                            onChange={(e) => e.target.value && setDeletingBatchId(e.target.value)}
-                            className="flex-1 sm:flex-none px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
-                            value=""
-                        >
-                            <option value="">مسح مجموعة...</option>
-                            {batchOptions.map(batch => (
-                                <option key={batch.id} value={batch.id}>{batch.name}</option>
-                            ))}
-                        </select>
-                    )}
-
+                <div className="flex gap-3">
                     <button
                         onClick={() => setShowDeleteAllDialog(true)}
-                        className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-bold"
                     >
                         <Trash size={18} />
-                        <span className="sm:hidden md:inline">مسح الكل</span>
-                        <span className="hidden sm:inline md:hidden">مسح</span>
+                        مسح جميع البيانات
                     </button>
                 </div>
             </div>
 
-            {/* Factories List */}
-            {loading ? (
-                <div className="text-center py-12">جاري التحميل...</div>
+            {loadingBatches ? (
+                <div className="text-center py-12 flex flex-col items-center gap-4">
+                    <Loader2 className="animate-spin text-primary" size={40} />
+                    <p className="text-gray-500 font-bold">جاري تحميل المجموعات...</p>
+                </div>
             ) : (
                 <div className="space-y-6">
-                    {batches.map((batch, batchIndex) => {
-                        const isExpanded = expandedBatches.has(batch.id || 'no-batch');
+                    {visibleBatches.map((batch) => {
+                        const isExpanded = expandedBatches.has(batch.id);
+                        const isLoadingFactories = loadingBatchId === batch.id;
+
                         return (
-                            <div key={batchIndex} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-                                {/* Batch Header */}
+                            <div key={batch.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden transition-all">
                                 <div
-                                    className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center cursor-pointer hover:from-blue-100 hover:to-indigo-100 transition-colors"
-                                    onClick={() => toggleBatchExpand(batch.id || 'no-batch')}
+                                    className="bg-gray-50/50 px-8 py-5 flex justify-between items-center cursor-pointer hover:bg-gray-100/50 transition-colors"
+                                    onClick={() => toggleBatchExpand(batch.id)}
                                 >
                                     <div>
-                                        <h3 className="text-lg font-semibold text-gray-800">{batch.name}</h3>
-                                        <p className="text-sm text-gray-600 mt-1">{batch.factories.length} مصنع</p>
+                                        <h3 className="text-lg font-black text-gray-900">{batch.name}</h3>
+                                        <p className="text-sm font-bold text-gray-500 mt-0.5">{batch.count} مصنع في هذه المجموعة</p>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <div className="flex items-center gap-1 ml-4" onClick={(e) => e.stopPropagation()}>
-                                            <button
-                                                onClick={() => {
-                                                    const newName = prompt('أدخل الاسم الجديد للمجموعة:', batch.name);
-                                                    if (newName && newName !== batch.name) {
-                                                        // Update batch name in DB for all factories in this batch
-                                                        supabase.from('factories')
-                                                            .update({ batch_name: newName })
-                                                            .eq('batch_id', batch.id)
-                                                            .then(({ error }) => {
-                                                                if (!error) {
-                                                                    setFactories(prev => prev.map(f =>
-                                                                        f.batch_id === batch.id ? { ...f, batch_name: newName } : f
-                                                                    ));
-                                                                } else {
-                                                                    alert('فشل التعديل: ' + error.message);
-                                                                }
-                                                            });
-                                                    }
-                                                }}
-                                                className="p-2 text-blue-600 hover:bg-blue-50 rounded-full"
-                                                title="تعديل اسم المجموعة"
-                                            >
-                                                <Edit size={16} />
-                                            </button>
+                                    <div className="flex items-center gap-6">
+                                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                                             <button
                                                 onClick={() => setDeletingBatchId(batch.id)}
-                                                className="p-2 text-red-600 hover:bg-red-50 rounded-full"
-                                                title="حذف المجموعة بالكامل"
+                                                className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all"
+                                                title="حذف المجموعة"
                                             >
-                                                <Trash2 size={16} />
+                                                <Trash2 size={20} />
                                             </button>
                                         </div>
-
-                                        <div className="flex items-center gap-2 text-blue-600">
-                                            <span className="text-sm font-medium">{isExpanded ? 'إخفاء التفاصيل' : 'عرض التفاصيل'}</span>
-                                            {isExpanded ? <ChevronUp size={24} /> : <ChevronDown size={24} />}
+                                        <div className="flex items-center gap-2 text-primary font-black text-sm border-r pr-6 border-gray-200">
+                                            {isExpanded ? 'إخفاء' : 'عرض المصانع'}
+                                            {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Factories Table */}
                                 {isExpanded && (
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-right">
-                                            <thead className="bg-gray-50 text-gray-700">
-                                                <tr>
-                                                    <th className="p-4 w-16">#</th>
-                                                    <th className="p-4 text-right">اسم المصنع</th>
-                                                    <th className="p-4 text-right">المجال</th>
-                                                    <th className="p-4 text-right">الدولة</th>
-                                                    <th className="p-4 text-right">إجراءات</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-100">
-                                                {batch.factories.map((factory, index) => (
-                                                    <tr key={factory.id || factory.factory_code || `factory-${batchIndex}-${index}`} className="hover:bg-gray-50">
-                                                        <td className="p-4 text-gray-500 font-medium">{index + 1}</td>
-                                                        <td className="p-4 font-medium">{factory.name}</td>
-                                                        <td className="p-4 text-sm text-gray-600">{factory.industry?.join(', ')}</td>
-                                                        <td className="p-4 text-sm text-gray-600">{factory.country}</td>
-                                                        <td className="p-4 flex gap-3">
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    if (factory.approved) return;
-
-                                                                    // Optimistic update
-                                                                    const updatedFactory = { ...factory, approved: true };
-                                                                    setFactories(prev => prev.map(f =>
-                                                                        (f.id === factory.id || f.factory_code === factory.factory_code) ? updatedFactory : f
-                                                                    ));
-
-                                                                    // DB Update
-                                                                    supabase.from('factories')
-                                                                        .update({ approved: true })
-                                                                        .eq(factory.id ? 'id' : 'factory_code', factory.id || factory.factory_code)
-                                                                        .then(({ error }) => {
-                                                                            if (error) {
-                                                                                alert('فشل الاعتماد: ' + error.message);
-                                                                                // Revert on error
-                                                                                setFactories(prev => prev.map(f =>
-                                                                                    (f.id === factory.id || f.factory_code === factory.factory_code) ? factory : f
-                                                                                ));
-                                                                            }
-                                                                        });
-                                                                }}
-                                                                className={`transition-colors ${factory.approved ? 'text-green-600 cursor-default' : 'text-gray-400 hover:text-green-600'}`}
-                                                                title={factory.approved ? "تمت الموافقة" : "اعتماد المصنع"}
-                                                                disabled={!!factory.approved}
-                                                            >
-                                                                {factory.approved ? <CheckCircle size={18} fill="#dcfce7" /> : <ShieldCheck size={18} />}
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setEditingFactory(factory);
-                                                                }}
-                                                                className="text-blue-600 hover:text-blue-800"
-                                                                title="تعديل"
-                                                            >
-                                                                <Edit size={18} />
-                                                            </button>
-                                                            <button
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    setDeletingFactory(factory);
-                                                                }}
-                                                                className="text-red-600 hover:text-red-800"
-                                                                title="حذف"
-                                                            >
-                                                                <Trash2 size={18} />
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                    <div className="border-t border-gray-100">
+                                        {isLoadingFactories ? (
+                                            <div className="p-12 text-center flex flex-col items-center gap-3">
+                                                <Loader2 className="animate-spin text-primary/50" size={24} />
+                                                <p className="text-gray-400 font-bold text-sm">جاري تحميل القائمة...</p>
+                                            </div>
+                                        ) : batch.loadedFactories ? (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-right">
+                                                    <thead className="bg-gray-50/50 text-gray-400 text-[10px] font-black uppercase tracking-widest">
+                                                        <tr>
+                                                            <th className="px-8 py-4">اسم المصنع</th>
+                                                            <th className="px-8 py-4">البريد الإلكتروني</th>
+                                                            <th className="px-8 py-4">المدينة / الدولة</th>
+                                                            <th className="px-8 py-4 text-center">الإجراءات</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {batch.loadedFactories.map((factory) => (
+                                                            <tr key={factory.id} className="hover:bg-gray-50/50 transition-colors group">
+                                                                <td className="px-8 py-5 font-black text-gray-900">{factory.name}</td>
+                                                                <td className="px-8 py-5 font-bold text-blue-600 text-sm">{factory.email || '---'}</td>
+                                                                <td className="px-8 py-5 font-bold text-gray-500 text-sm">{factory.city}، {factory.country}</td>
+                                                                <td className="px-8 py-5">
+                                                                    <div className="flex items-center justify-center gap-2">
+                                                                        <button
+                                                                            onClick={() => setEditingFactory(factory)}
+                                                                            className="w-10 h-10 flex items-center justify-center bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-primary hover:border-primary/20 transition-all shadow-sm"
+                                                                        >
+                                                                            <Edit size={18} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => setDeletingFactory(factory)}
+                                                                            className="w-10 h-10 flex items-center justify-center bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm"
+                                                                        >
+                                                                            <Trash2 size={18} />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : null}
                                     </div>
                                 )}
                             </div>
                         );
                     })}
 
-                    {batches.length === 0 && (
-                        <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200 text-center text-gray-500">
-                            لا توجد مصانع مطابقة
+                    {hasMore && (
+                        <div className="flex justify-center pt-8">
+                            <button
+                                onClick={() => setVisibleBatchCount(prev => prev + 5)}
+                                className="h-14 px-10 bg-white border-2 border-primary/20 text-primary rounded-2xl font-black hover:bg-primary hover:text-white hover:border-primary transition-all shadow-lg shadow-primary/5 flex items-center gap-3"
+                            >
+                                <Plus size={20} />
+                                تحميل المزيد من المجموعات
+                            </button>
                         </div>
                     )}
                 </div>
             )}
 
-            {/* Modals */}
             <FactoryFormModal
-                isOpen={showAddModal || !!editingFactory}
-                onClose={() => {
-                    setShowAddModal(false);
-                    setEditingFactory(null);
-                }}
-                onSuccess={(savedFactory) => {
-                    setFactories(prev => {
-                        // Check if it's an edit or a new factory
-                        const exists = prev.some(f =>
-                            (savedFactory.id && String(f.id) === String(savedFactory.id)) ||
-                            (savedFactory.factory_code && f.factory_code === savedFactory.factory_code)
-                        );
-
-                        if (exists) {
-                            // Update in place to preserve order
-                            console.log('Updating factory in state:', savedFactory.name);
-                            return prev.map(f => {
-                                const isMatch = (savedFactory.id && String(f.id) === String(savedFactory.id)) ||
-                                    (savedFactory.factory_code && f.factory_code === savedFactory.factory_code);
-                                return isMatch ? savedFactory : f;
-                            });
-                        } else {
-                            // Add to top for new factory
-                            console.log('Adding new factory to state:', savedFactory.name);
-                            return [savedFactory, ...prev];
-                        }
-                    });
-
-                    setShowAddModal(false);
-                    setEditingFactory(null);
-                }}
+                isOpen={showFormModal || !!editingFactory}
+                onClose={() => { setShowFormModal(false); setEditingFactory(null); }}
+                onSuccess={() => fetchBatchMetadata()}
                 factory={editingFactory}
                 batches={batchOptions}
             />
@@ -448,17 +341,17 @@ export const FactoriesPage = () => {
                 isOpen={!!deletingFactory}
                 onClose={() => setDeletingFactory(null)}
                 onConfirm={handleDeleteFactory}
-                title="حذف المصنع"
+                title="حذف مصنع"
                 message={`هل أنت متأكد من حذف "${deletingFactory?.name}"؟`}
-                confirmText="حذف"
+                confirmText="حذف نهائي"
             />
 
             <ConfirmDialog
                 isOpen={!!deletingBatchId}
                 onClose={() => setDeletingBatchId(null)}
                 onConfirm={handleDeleteBatch}
-                title="حذف المجموعة"
-                message={`هل أنت متأكد من حذف جميع المصانع في "${deletingBatch?.name}"؟ سيتم حذف ${deletingBatch?.factories.length} مصنع.`}
+                title="حذف مجموعة بالكامل"
+                message="سيتم حذف جميع المصانع المرتبطة بهذه المجموعة بشكل نهائي."
                 confirmText="حذف المجموعة"
             />
 
@@ -466,8 +359,8 @@ export const FactoriesPage = () => {
                 isOpen={showDeleteAllDialog}
                 onClose={() => setShowDeleteAllDialog(false)}
                 onConfirm={handleDeleteAll}
-                title="⚠️ حذف جميع البيانات"
-                message="هذا الإجراء سيحذف جميع المصانع بشكل نهائي ولا يمكن التراجع عنه!"
+                title="تطهير قاعدة البيانات"
+                message="هذا الإجراء سيحذف جميع المصانع بلا استثناء. لا يمكن التراجع!"
                 confirmText="حذف الكل"
                 requireTextConfirmation
                 confirmationText="DELETE ALL"
