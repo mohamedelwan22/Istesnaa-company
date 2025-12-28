@@ -191,7 +191,7 @@ export const EmailsPage = () => {
             status: 'Sent'
         };
 
-        supabase.from('contact_logs').insert([newLog]).select()
+        Promise.resolve(supabase.from('contact_logs').insert([newLog]).select())
             .then(({ data, error }) => {
                 if (!error && data && data[0]) {
                     setContactLogs(prev => [data[0], ...prev]);
@@ -199,7 +199,7 @@ export const EmailsPage = () => {
                     setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
                 }
             })
-            .catch(err => console.error('Logging failed:', err));
+            .catch((err: unknown) => console.error('Logging failed:', err));
     };
 
     const [selectedIndustry, setSelectedIndustry] = useState<string>('all');
@@ -326,7 +326,7 @@ export const EmailsPage = () => {
                 status: 'Sent'
             };
 
-            supabase.from('contact_logs').insert([newLog]).select()
+            Promise.resolve(supabase.from('contact_logs').insert([newLog]).select())
                 .then(({ data, error }) => {
                     if (!error && data && data[0]) {
                         setContactLogs(prev => [data[0], ...prev]);
@@ -334,7 +334,7 @@ export const EmailsPage = () => {
                         setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
                     }
                 })
-                .catch(err => console.error('Logging failed:', err));
+                .catch((err: unknown) => console.error('Logging failed:', err));
         }
 
         const nextIndex = queueIndex + 1;
