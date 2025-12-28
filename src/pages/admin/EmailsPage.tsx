@@ -174,10 +174,10 @@ export const EmailsPage = () => {
         if (isSimulation) {
             alert(`[محاكاة] سيتم إرسال إيميل إلى: ${factory.email}\nالعنوان: ${subject}\n\nالنظام يعمل بشكل سليم ✅`);
         } else {
-            const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${factory.email}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-            const win = window.open(gmailLink, '_blank');
+            const mailtoLink = `mailto:${factory.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            const win = window.open(mailtoLink, '_blank');
             if (!win) {
-                alert('يرجى السماح بفتح النوافذ المنبثقة (Popups) من إعدادات المتصفح لتتمكن من فتح Gmail تلقائياً.');
+                alert('يرجى التأكد من إعداد برنامج البريد الافتراضي على جهازك والسماح بالنوافذ المنبثقة.');
             }
         }
 
@@ -307,11 +307,11 @@ export const EmailsPage = () => {
             if (isSimulation) {
                 console.log(`[Simulation] Sending to ${factory.email}: ${tokenizedSubject}`);
             } else {
-                // Individualized Gmail Link
-                const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${factory.email}&su=${encodeURIComponent(tokenizedSubject)}&body=${encodeURIComponent(tokenizedBody)}`;
-                const win = window.open(gmailLink, '_blank');
+                // Client-Agnostic Mailto Link
+                const mailtoLink = `mailto:${factory.email}?subject=${encodeURIComponent(tokenizedSubject)}&body=${encodeURIComponent(tokenizedBody)}`;
+                const win = window.open(mailtoLink, '_blank');
                 if (!win) {
-                    alert('يرجى السماح بفتح النوافذ المنبثقة (Popups) من إعدادات المتصفح.');
+                    alert('يرجى التأكد من إعداد برنامج البريد الافتراضي على جهازك والسماح بالنوافذ المنبثقة.');
                     return; // Stop flow if blocked
                 }
             }
@@ -660,7 +660,7 @@ export const EmailsPage = () => {
                             </div>
 
                             <div>
-                                <h2 className="text-3xl font-black text-gray-900">بدء التواصل عبر Gmail</h2>
+                                <h2 className="text-3xl font-black text-gray-900">بدء التواصل عبر بريد النظام</h2>
                                 <p className="text-gray-500 font-bold mt-2">المصنع الحالي: {queueIndex + 1} من {sendingQueue.length}</p>
                             </div>
 
@@ -691,7 +691,7 @@ export const EmailsPage = () => {
                                     />
                                 </div>
                                 <div className="flex justify-between text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                    <span>تم فتح Gmail</span>
+                                    <span>تم فتح تطبيق البريد</span>
                                     <span>{progress}% اكتمل</span>
                                 </div>
                             </div>
@@ -708,7 +708,7 @@ export const EmailsPage = () => {
                                     className="h-16 rounded-2xl bg-primary text-white font-black shadow-xl shadow-primary/20 hover:bg-blue-900 transition-all flex items-center justify-center gap-3"
                                 >
                                     <Mail size={20} />
-                                    فتح Gmail والانتقال للتالي
+                                    فتح البريد والانتقال للتالي
                                 </button>
                             </div>
 
