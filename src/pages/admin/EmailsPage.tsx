@@ -166,18 +166,22 @@ export const EmailsPage = () => {
         setVisibleBatchCount(prev => prev + 5);
     };
 
-    const handleSendIndividual = async (factory: Factory) => {
+    const handleSendIndividual = (factory: Factory) => {
         if (!factory.email) return;
-        const subject = 'فرصة تصنيع جديدة - منصة استصناع';
-        const body = `مرحباً ${factory.name}،\n\nنود التواصل معكم بخصوص فرصة تصنيع جديدة...\n\nشكراً لكم.`;
+        const subject = tokenize(emailTemplate.subject, factory);
+        const body = tokenize(emailTemplate.body, factory, attachmentLinks);
 
         if (isSimulation) {
             alert(`[محاكاة] سيتم إرسال إيميل إلى: ${factory.email}\nالعنوان: ${subject}\n\nالنظام يعمل بشكل سليم ✅`);
         } else {
-            window.open(`mailto:${factory.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank');
+            const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${factory.email}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            const win = window.open(gmailLink, '_blank');
+            if (!win) {
+                alert('يرجى السماح بفتح النوافذ المنبثقة (Popups) من إعدادات المتصفح لتتمكن من فتح Gmail تلقائياً.');
+            }
         }
 
-        // Log the effort
+        // Log the effort (Asynchronously - do not await)
         const newLog: ContactLog = {
             factory_id: factory.id || 'unknown',
             factory_name: factory.name || 'غير مسمى',
@@ -187,13 +191,15 @@ export const EmailsPage = () => {
             status: 'Sent'
         };
 
-        const { data, error } = await supabase.from('contact_logs').insert([newLog]).select();
-        if (!error && data && data[0]) {
-            setContactLogs(prev => [data[0], ...prev]);
-        } else {
-            // Fallback if select fails or table doesn't exist (local simulation)
-            setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
-        }
+        supabase.from('contact_logs').insert([newLog]).select()
+            .then(({ data, error }) => {
+                if (!error && data && data[0]) {
+                    setContactLogs(prev => [data[0], ...prev]);
+                } else {
+                    setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
+                }
+            })
+            .catch(err => console.error('Logging failed:', err));
     };
 
     const [selectedIndustry, setSelectedIndustry] = useState<string>('all');
@@ -207,21 +213,27 @@ export const EmailsPage = () => {
 
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
-            setSelectedFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+            const files = Array.from(e.target.files!);
+            setSelectedFiles(prev => [...prev, ...files]);
+            // BACKGROUND UPLOAD START
+            uploadFiles(files);
         }
     };
 
     const removeFile = (index: number) => {
+        const fileToRemove = selectedFiles[index];
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+        // Also remove from attachment links if it was uploaded
+        setAttachmentLinks(prev => prev.filter(l => l.name !== fileToRemove.name));
     };
 
-    const uploadFiles = async () => {
-        if (selectedFiles.length === 0) return [];
+    const uploadFiles = async (filesToUpload: File[]) => {
+        if (filesToUpload.length === 0) return [];
         setIsUploading(true);
         const links: { name: string, url: string }[] = [];
 
         try {
-            for (const file of selectedFiles) {
+            for (const file of filesToUpload) {
                 const fileExt = file.name.split('.').pop();
                 const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
                 const filePath = `attachments/${fileName}`;
@@ -238,11 +250,12 @@ export const EmailsPage = () => {
 
                 links.push({ name: file.name, url: publicUrl });
             }
-            setAttachmentLinks(links);
+            setAttachmentLinks(prev => [...prev, ...links]);
             return links;
         } catch (error) {
             console.error('Error uploading files:', error);
-            alert('فشل رفع الملفات. تأكد من وجود صلاحيات الوصول لـ Supabase Storage.');
+            // Non-blocking error
+            console.warn('Some files failed to upload, but sending flow remains open.');
             return [];
         } finally {
             setIsUploading(false);
@@ -256,23 +269,21 @@ export const EmailsPage = () => {
 
         if (links.length > 0) {
             result += '\n\nالمرفقات:\n' + links.map(l => `${l.name}: ${l.url}`).join('\n');
+        } else if (selectedFiles.length > 0 && isUploading) {
+            result += '\n\n(ملاحظة: جاري تجهيز روابط المرفقات الإضافية، سيتم تزويدكم بها قريباً جداً)';
         }
+
         return result;
     };
 
-    const confirmSendBulk = async () => {
+    const confirmSendBulk = () => {
         const limit = 300;
         const targetList = factoriesToEmail.slice(0, limit);
 
         if (targetList.length === 0) return;
 
         setSending(true);
-        const uploadedLinks = await uploadFiles();
-
-        if (selectedFiles.length > 0 && uploadedLinks.length === 0) {
-            setSending(false);
-            return; // Error occurred during upload
-        }
+        // Note: No more await uploadFiles here. It happens in background.
 
         setSendingQueue(targetList);
         setQueueIndex(0);
@@ -281,7 +292,7 @@ export const EmailsPage = () => {
         setProgress(0);
     };
 
-    const processNextInQueue = async (skip = false) => {
+    const processNextInQueue = (skip = false) => {
         if (queueIndex >= sendingQueue.length) {
             handleFinishDispatch();
             return;
@@ -298,10 +309,14 @@ export const EmailsPage = () => {
             } else {
                 // Individualized Gmail Link
                 const gmailLink = `https://mail.google.com/mail/?view=cm&fs=1&to=${factory.email}&su=${encodeURIComponent(tokenizedSubject)}&body=${encodeURIComponent(tokenizedBody)}`;
-                window.open(gmailLink, '_blank');
+                const win = window.open(gmailLink, '_blank');
+                if (!win) {
+                    alert('يرجى السماح بفتح النوافذ المنبثقة (Popups) من إعدادات المتصفح.');
+                    return; // Stop flow if blocked
+                }
             }
 
-            // LOG IMMEDIATELY AFTER OPENING WINDOW
+            // LOG ASYNCHRONOUSLY
             const newLog: ContactLog = {
                 factory_id: factory.id || 'unknown',
                 factory_name: factory.name || 'غير مسمى',
@@ -311,13 +326,15 @@ export const EmailsPage = () => {
                 status: 'Sent'
             };
 
-            // Save to Supabase
-            const { data, error } = await supabase.from('contact_logs').insert([newLog]).select();
-            if (!error && data && data[0]) {
-                setContactLogs(prev => [data[0], ...prev]);
-            } else {
-                setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
-            }
+            supabase.from('contact_logs').insert([newLog]).select()
+                .then(({ data, error }) => {
+                    if (!error && data && data[0]) {
+                        setContactLogs(prev => [data[0], ...prev]);
+                    } else {
+                        setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
+                    }
+                })
+                .catch(err => console.error('Logging failed:', err));
         }
 
         const nextIndex = queueIndex + 1;
@@ -450,7 +467,7 @@ export const EmailsPage = () => {
                         )}
                     >
                         {sending ? <Loader2 className="animate-spin" size={20} /> : <Eye size={20} />}
-                        {sending ? `جاري الإرسال (${progress}%)...` : 'معاينة الحملة'}
+                        {sending ? `تحضير الإرسال (${progress}%)...` : 'معاينة الحملة'}
                     </button>
                 </div>
             </div>
@@ -643,7 +660,7 @@ export const EmailsPage = () => {
                             </div>
 
                             <div>
-                                <h2 className="text-3xl font-black text-gray-900">جاري إرسال الحملة الذكية</h2>
+                                <h2 className="text-3xl font-black text-gray-900">بدء التواصل عبر Gmail</h2>
                                 <p className="text-gray-500 font-bold mt-2">المصنع الحالي: {queueIndex + 1} من {sendingQueue.length}</p>
                             </div>
 
@@ -674,7 +691,7 @@ export const EmailsPage = () => {
                                     />
                                 </div>
                                 <div className="flex justify-between text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                    <span>جاري المعالجة</span>
+                                    <span>تم فتح Gmail</span>
                                     <span>{progress}% اكتمل</span>
                                 </div>
                             </div>
