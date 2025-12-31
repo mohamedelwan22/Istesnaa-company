@@ -358,6 +358,9 @@ const InventionsPage = lazy(() => import('./admin/InventionsPage').then(module =
 const EmailsPage = lazy(() => import('./admin/EmailsPage').then(module => ({ default: module.EmailsPage })));
 const DeduplicationPage = lazy(() => import('./admin/DeduplicationPage').then(module => ({ default: module.DeduplicationPage })));
 const CompatibleFactoriesPage = lazy(() => import('./admin/CompatibleFactoriesPage').then(module => ({ default: module.CompatibleFactoriesPage })));
+const FactoryResponsesPage = lazy(() => import('./admin/FactoryResponsesPage').then(module => ({ default: module.FactoryResponsesPage })));
+const ContactedFactoriesPage = lazy(() => import('./admin/ContactedFactoriesPage').then(module => ({ default: module.ContactedFactoriesPage })));
+const CertifiedFactoriesPage = lazy(() => import('./admin/CertifiedFactoriesPage').then(module => ({ default: module.CertifiedFactoriesPage })));
 const SettingsPage = lazy(() => import('./admin/SettingsPage').then(module => ({ default: module.SettingsPage })));
 
 const LoadingSpinner = () => (
@@ -374,6 +377,9 @@ export const AdminDashboard = () => {
                     <Route index element={<DashboardHome />} />
                     <Route path="upload" element={<UploadPage />} />
                     <Route path="factories" element={<FactoriesPage />} />
+                    <Route path="contacted" element={<ContactedFactoriesPage />} />
+                    <Route path="responses" element={<FactoryResponsesPage />} />
+                    <Route path="certified" element={<CertifiedFactoriesPage />} />
                     <Route path="approved" element={<CompatibleFactoriesPage />} />
                     <Route path="inventions" element={<InventionsPage />} />
                     <Route path="emails" element={<EmailsPage />} />

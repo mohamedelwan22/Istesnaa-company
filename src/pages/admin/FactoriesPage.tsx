@@ -5,10 +5,12 @@ import { FactoryFormModal } from '../../components/FactoryFormModal';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import {
     Search, Trash2, Edit, Plus, Trash, ChevronDown, ChevronUp,
-    Loader2
+    Loader2, MessageSquare, Check, X, Star
 } from 'lucide-react';
+import { useFactoryStatus } from '../../context/FactoryStatusContext';
 
 export const FactoriesPage = () => {
+    const { getStatus, updateStatus } = useFactoryStatus();
     const [batches, setBatches] = useState<{ id: string, name: string, count: number, loadedFactories?: Factory[] }[]>([]);
     const [loadingBatches, setLoadingBatches] = useState(true);
     const [visibleBatchCount, setVisibleBatchCount] = useState(10);
@@ -276,30 +278,98 @@ export const FactoriesPage = () => {
                                                     <thead className="bg-gray-50/50 text-gray-400 text-[10px] font-black uppercase tracking-widest">
                                                         <tr>
                                                             <th className="px-8 py-4">اسم المصنع</th>
+                                                            <th className="px-8 py-4">الحالة</th>
                                                             <th className="px-8 py-4">البريد الإلكتروني</th>
-                                                            <th className="px-8 py-4">المدينة / الدولة</th>
                                                             <th className="px-8 py-4 text-center">الإجراءات</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-gray-100">
                                                         {batch.loadedFactories.map((factory) => (
                                                             <tr key={factory.id} className="hover:bg-gray-50/50 transition-colors group">
-                                                                <td className="px-8 py-5 font-black text-gray-900">{factory.name}</td>
+                                                                <td className="px-8 py-5 font-black text-gray-900">
+                                                                    {factory.name}
+                                                                </td>
+                                                                <td className="px-8 py-5">
+                                                                    {(() => {
+                                                                        const status = getStatus(factory.id || factory.factory_code || '');
+                                                                        switch (status) {
+                                                                            case 'contacted': return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs font-bold">قيد التواصل</span>;
+                                                                            case 'approved': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded-md text-xs font-bold">موافق ✅</span>;
+                                                                            case 'rejected': return <span className="bg-red-100 text-red-700 px-2 py-1 rounded-md text-xs font-bold">رافض ❌</span>;
+                                                                            case 'certified': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded-md text-xs font-bold">معتمد ⭐</span>;
+                                                                            default: return <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md text-xs font-bold">قيد الانتظار</span>;
+                                                                        }
+                                                                    })()}
+                                                                </td>
                                                                 <td className="px-8 py-5 font-bold text-blue-600 text-sm">{factory.email || '---'}</td>
-                                                                <td className="px-8 py-5 font-bold text-gray-500 text-sm">{factory.city}، {factory.country}</td>
                                                                 <td className="px-8 py-5">
                                                                     <div className="flex items-center justify-center gap-2">
+                                                                        {(() => {
+                                                                            const id = factory.id || factory.factory_code || '';
+                                                                            const status = getStatus(id);
+                                                                            if (status === 'pending') {
+                                                                                return (
+                                                                                    <button
+                                                                                        onClick={() => updateStatus(id, 'contacted')}
+                                                                                        className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-all shadow-sm"
+                                                                                        title="قيد التواصل"
+                                                                                    >
+                                                                                        <MessageSquare size={14} />
+                                                                                        قيد التواصل
+                                                                                    </button>
+                                                                                );
+                                                                            }
+                                                                            if (status === 'contacted') {
+                                                                                return (
+                                                                                    <div className="flex gap-1">
+                                                                                        <button
+                                                                                            onClick={() => updateStatus(id, 'approved')}
+                                                                                            className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-all"
+                                                                                            title="موافق"
+                                                                                        >
+                                                                                            <Check size={16} />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => updateStatus(id, 'rejected')}
+                                                                                            className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all"
+                                                                                            title="رافض"
+                                                                                        >
+                                                                                            <X size={16} />
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => updateStatus(id, 'certified')}
+                                                                                            className="p-1.5 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-all"
+                                                                                            title="اعتماد"
+                                                                                        >
+                                                                                            <Star size={16} />
+                                                                                        </button>
+                                                                                    </div>
+                                                                                );
+                                                                            }
+                                                                            if (status === 'approved' || status === 'rejected') {
+                                                                                return (
+                                                                                    <button
+                                                                                        onClick={() => updateStatus(id, 'certified')}
+                                                                                        className="p-1.5 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-all"
+                                                                                        title="اعتماد"
+                                                                                    >
+                                                                                        <Star size={16} />
+                                                                                    </button>
+                                                                                );
+                                                                            }
+                                                                            return null;
+                                                                        })()}
                                                                         <button
                                                                             onClick={() => setEditingFactory(factory)}
-                                                                            className="w-10 h-10 flex items-center justify-center bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-primary hover:border-primary/20 transition-all shadow-sm"
+                                                                            className="w-8 h-8 flex items-center justify-center bg-white border border-gray-100 rounded-lg text-gray-400 hover:text-primary hover:border-primary/20 transition-all shadow-sm"
                                                                         >
-                                                                            <Edit size={18} />
+                                                                            <Edit size={14} />
                                                                         </button>
                                                                         <button
                                                                             onClick={() => setDeletingFactory(factory)}
-                                                                            className="w-10 h-10 flex items-center justify-center bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm"
+                                                                            className="w-8 h-8 flex items-center justify-center bg-white border border-gray-100 rounded-lg text-gray-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm"
                                                                         >
-                                                                            <Trash2 size={18} />
+                                                                            <Trash2 size={14} />
                                                                         </button>
                                                                     </div>
                                                                 </td>

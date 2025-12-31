@@ -15,6 +15,7 @@ export interface Factory {
     batch_id?: string;
     batch_name?: string;
     approved?: boolean;
+    status?: 'pending' | 'contacted' | 'approved' | 'rejected' | 'certified';
 }
 
 export interface Invention {
