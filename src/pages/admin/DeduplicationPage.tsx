@@ -15,7 +15,7 @@ import clsx from 'clsx';
 export const DeduplicationPage = () => {
     const [groups, setGroups] = useState<DuplicateGroup[]>([]);
     const [loading, setLoading] = useState(true);
-    const [isProcessing, setIsProcessing] = useState<string | null>(null);
+    const [isProcessing, setIsProcessing] = useState<number | null>(null);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
@@ -38,7 +38,7 @@ export const DeduplicationPage = () => {
         }
     };
 
-    const handleMerge = async (groupId: string, primaryId: string, suspectIds: string[]) => {
+    const handleMerge = async (groupId: number, primaryId: number, suspectIds: number[]) => {
         if (!confirm('هل أنت متأكد من دمج هذه السجلات؟ سيتم حذف السجلات المتكررة والإبقاء على السجل الرئيسي فقط.')) return;
 
         setIsProcessing(groupId);
@@ -122,7 +122,7 @@ export const DeduplicationPage = () => {
                     <div className="grid gap-6">
                         {groups.map((group, index) => (
                             <motion.div
-                                key={group.primary?.id || index}
+                                key={group.primary.id || index}
                                 layout
                                 className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden"
                             >
@@ -142,7 +142,7 @@ export const DeduplicationPage = () => {
                                         </div>
 
                                         <button
-                                            onClick={() => group.primary.id && handleMerge(group.primary.id, group.primary.id, group.suspects.map(s => s.factory.id || ''))}
+                                            onClick={() => group.primary.id && handleMerge(group.primary.id, group.primary.id, group.suspects.map(s => s.factory.id))}
                                             disabled={isProcessing === group.primary.id}
                                             className="h-12 px-8 bg-primary text-white rounded-xl font-black flex items-center gap-3 shadow-lg shadow-primary/20 hover:bg-blue-800 transition-all disabled:opacity-50"
                                         >
@@ -153,7 +153,7 @@ export const DeduplicationPage = () => {
                                 </div>
 
                                 <div className="p-4 space-y-3">
-                                    <p className="px-4 text-[11px] font-black text-gray-400 uppercase tracking-widest">سجلات مشتبه بها للتكرار</p>
+                                    <p className="px-4 text-[11px] font-black text-gray-400 uppercase tracking-widest text-right">سجلات مشتبه بها للتكرار</p>
                                     {group.suspects.map((suspect) => (
                                         <div
                                             key={suspect.factory.id}

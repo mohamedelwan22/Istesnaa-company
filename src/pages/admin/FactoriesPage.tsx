@@ -10,7 +10,7 @@ import {
 import { useFactoryStatus } from '../../context/FactoryStatusContext';
 
 export const FactoriesPage = () => {
-    const { getStatus, updateStatus } = useFactoryStatus();
+    const { getStatus, updateStatus, refreshStatuses, isContacted } = useFactoryStatus();
     const [batches, setBatches] = useState<{ id: string, name: string, count: number, loadedFactories?: Factory[] }[]>([]);
     const [loadingBatches, setLoadingBatches] = useState(true);
     const [visibleBatchCount, setVisibleBatchCount] = useState(10);
@@ -42,7 +42,7 @@ export const FactoriesPage = () => {
                 // Group by batch_id
                 const counts: Record<string, { name: string, count: number }> = {};
                 data.forEach(f => {
-                    const id = f.batch_id || 'no-batch';
+                    const id = f.batch_id ?? 'no-batch';
                     if (!counts[id]) {
                         counts[id] = { name: f.batch_name || 'مصانع بدون مجموعة', count: 0 };
                     }
@@ -69,7 +69,8 @@ export const FactoriesPage = () => {
 
         setLoadingBatchId(batchId);
         try {
-            const columns = 'id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code, status, created_at';
+            // MANDATORY: Use factory_status and id (BIGINT)
+            const columns = 'id, name, email, industry, city, country, batch_id, batch_name, is_contacted, factory_status, created_at';
 
             let query = supabase
                 .from('factories')
@@ -81,21 +82,7 @@ export const FactoriesPage = () => {
                 query = query.eq('batch_id', batchId);
             }
 
-            let { data, error } = await query.order('name', { ascending: true });
-
-            if (error && error.code === '42703') {
-                // Column 'status' doesn't exist, retry without it
-                const fallbackColumns = 'id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code, created_at';
-                let fallbackQuery = supabase.from('factories').select(fallbackColumns);
-                if (batchId === 'no-batch') {
-                    fallbackQuery = fallbackQuery.is('batch_id', null);
-                } else {
-                    fallbackQuery = fallbackQuery.eq('batch_id', batchId);
-                }
-                const fallbackResult = await fallbackQuery.order('name', { ascending: true });
-                data = fallbackResult.data as any; // Cast to avoid strict status requirement
-                error = fallbackResult.error;
-            }
+            const { data, error } = await query.order('name', { ascending: true });
 
             if (error) throw error;
 
@@ -103,27 +90,27 @@ export const FactoriesPage = () => {
                 b.id === batchId ? { ...b, loadedFactories: (data as any) || [] } : b
             ));
         } catch (err) {
-            console.error('Error fetching factories for batch:', err);
+            console.error('Error fetching factories in batch:', err);
         } finally {
             setLoadingBatchId(null);
         }
     };
 
-    const toggleBatchExpand = async (batchId: string) => {
+    const toggleBatchExpand = (batchId: string) => {
         setExpandedBatches(prev => {
             const next = new Set(prev);
-            if (next.has(batchId)) {
+            const expanding = !next.has(batchId);
+            if (!expanding) {
                 next.delete(batchId);
             } else {
                 next.add(batchId);
+                // Trigger fetch if not already loaded
+                if (!batches.find(b => String(b.id) === String(batchId))?.loadedFactories) {
+                    fetchFactoriesInBatch(batchId);
+                }
             }
             return next;
         });
-
-        const batch = batches.find(b => b.id === batchId);
-        if (batch && !batch.loadedFactories) {
-            await fetchFactoriesInBatch(batchId);
-        }
     };
 
     // CRUD Operations
@@ -131,22 +118,20 @@ export const FactoriesPage = () => {
         if (!deletingFactory) return;
 
         try {
-            let query = supabase.from('factories').delete();
-            if (deletingFactory.id) query = query.eq('id', deletingFactory.id);
-            else if (deletingFactory.factory_code) query = query.eq('factory_code', deletingFactory.factory_code);
-            else return;
+            const { error } = await supabase
+                .from('factories')
+                .delete()
+                .eq('id', deletingFactory.id);
 
-            const { error } = await query;
             if (error) throw error;
 
             setBatches(prev => prev.map(b => ({
                 ...b,
                 count: b.id === (deletingFactory.batch_id || 'no-batch') ? b.count - 1 : b.count,
-                loadedFactories: b.loadedFactories?.filter(f =>
-                    f.id !== deletingFactory.id && f.factory_code !== deletingFactory.factory_code
-                )
+                loadedFactories: b.loadedFactories?.filter(f => f.id !== deletingFactory.id)
             })));
             setDeletingFactory(null);
+            refreshStatuses();
         } catch (err) {
             console.error('Delete error:', err);
         }
@@ -179,7 +164,7 @@ export const FactoriesPage = () => {
             const { error } = await supabase
                 .from('factories')
                 .delete()
-                .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete everything
+                .gte('id', 0); // Mandatory: Delete ALL by BIGINT id
 
             if (error) throw error;
             setBatches([]);
@@ -213,7 +198,7 @@ export const FactoriesPage = () => {
                 </div>
                 <button
                     onClick={() => setShowFormModal(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-bold shadow-sm"
                 >
                     <Plus size={20} />
                     إضافة مصنع يدوياً
@@ -235,7 +220,7 @@ export const FactoriesPage = () => {
                 <div className="flex gap-3">
                     <button
                         onClick={() => setShowDeleteAllDialog(true)}
-                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-bold"
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 font-bold shadow-md transition-all active:scale-95"
                     >
                         <Trash size={18} />
                         مسح جميع البيانات
@@ -307,26 +292,43 @@ export const FactoriesPage = () => {
                                                                 </td>
                                                                 <td className="px-8 py-5">
                                                                     {(() => {
-                                                                        const status = factory.status || getStatus(factory.id || factory.factory_code || '');
-                                                                        switch (status) {
-                                                                            case 'contacted': return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs font-bold">قيد التواصل</span>;
+                                                                        const id = factory.id;
+                                                                        const liveStatus = getStatus(id) ?? factory.factory_status ?? 'pending';
+                                                                        const contacted = isContacted(id) || factory.is_contacted;
+
+                                                                        // Priority 1: If final status is set, show it
+                                                                        switch (liveStatus) {
                                                                             case 'approved': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded-md text-xs font-bold">موافق ✅</span>;
                                                                             case 'rejected': return <span className="bg-red-100 text-red-700 px-2 py-1 rounded-md text-xs font-bold">رافض ❌</span>;
                                                                             case 'certified': return <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded-md text-xs font-bold">معتمد ⭐</span>;
-                                                                            default: return <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md text-xs font-bold">قيد الانتظار</span>;
+                                                                            case 'contacted': return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs font-bold">قيد التواصل</span>;
                                                                         }
+
+                                                                        // Priority 2: If marked as contacted but still pending
+                                                                        if (contacted && liveStatus === 'pending') {
+                                                                            return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs font-bold">قيد التواصل</span>;
+                                                                        }
+
+                                                                        return <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-md text-xs font-bold">قيد الانتظار</span>;
                                                                     })()}
                                                                 </td>
                                                                 <td className="px-8 py-5 font-bold text-blue-600 text-sm">{factory.email || '---'}</td>
                                                                 <td className="px-8 py-5">
                                                                     <div className="flex items-center justify-center gap-2">
                                                                         {(() => {
-                                                                            const id = factory.id || factory.factory_code || '';
-                                                                            const status = factory.status || getStatus(id);
-                                                                            if (status === 'pending') {
+                                                                            const id = factory.id;
+                                                                            const liveStatus = getStatus(id) ?? factory.factory_status ?? 'pending';
+                                                                            const contacted = isContacted(id) || factory.is_contacted;
+
+                                                                            if (['approved', 'rejected', 'certified'].includes(liveStatus)) {
+                                                                                return null;
+                                                                            }
+
+                                                                            // If pending and NOT contacted, show "Move to Contacted" button
+                                                                            if (liveStatus === 'pending' && !contacted) {
                                                                                 return (
                                                                                     <button
-                                                                                        onClick={() => updateStatus(id, 'contacted')}
+                                                                                        onClick={() => updateStatus(id, 'pending', { is_contacted: true })}
                                                                                         className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-all shadow-sm"
                                                                                         title="قيد التواصل"
                                                                                     >
@@ -335,35 +337,24 @@ export const FactoriesPage = () => {
                                                                                     </button>
                                                                                 );
                                                                             }
-                                                                            if (status === 'contacted') {
-                                                                                return (
-                                                                                    <div className="flex gap-1">
-                                                                                        <button
-                                                                                            onClick={() => updateStatus(id, 'approved')}
-                                                                                            className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-all"
-                                                                                            title="موافق"
-                                                                                        >
-                                                                                            <Check size={16} />
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => updateStatus(id, 'rejected')}
-                                                                                            className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all"
-                                                                                            title="رافض"
-                                                                                        >
-                                                                                            <X size={16} />
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => updateStatus(id, 'certified')}
-                                                                                            className="p-1.5 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-all"
-                                                                                            title="اعتماد"
-                                                                                        >
-                                                                                            <Star size={16} />
-                                                                                        </button>
-                                                                                    </div>
-                                                                                );
-                                                                            }
-                                                                            if (status === 'approved' || status === 'rejected') {
-                                                                                return (
+
+                                                                            // Show triage buttons
+                                                                            return (
+                                                                                <div className="flex gap-1">
+                                                                                    <button
+                                                                                        onClick={() => updateStatus(id, 'approved')}
+                                                                                        className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-all"
+                                                                                        title="موافق"
+                                                                                    >
+                                                                                        <Check size={16} />
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => updateStatus(id, 'rejected')}
+                                                                                        className="p-1.5 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-all"
+                                                                                        title="رافض"
+                                                                                    >
+                                                                                        <X size={16} />
+                                                                                    </button>
                                                                                     <button
                                                                                         onClick={() => updateStatus(id, 'certified')}
                                                                                         className="p-1.5 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-all"
@@ -371,9 +362,8 @@ export const FactoriesPage = () => {
                                                                                     >
                                                                                         <Star size={16} />
                                                                                     </button>
-                                                                                );
-                                                                            }
-                                                                            return null;
+                                                                                </div>
+                                                                            );
                                                                         })()}
                                                                         <button
                                                                             onClick={() => setEditingFactory(factory)}
@@ -383,9 +373,11 @@ export const FactoriesPage = () => {
                                                                         </button>
                                                                         <button
                                                                             onClick={() => setDeletingFactory(factory)}
-                                                                            className="w-8 h-8 flex items-center justify-center bg-white border border-gray-100 rounded-lg text-gray-400 hover:text-red-500 hover:border-red-100 transition-all shadow-sm"
+                                                                            className="flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 transition-all shadow-sm"
+                                                                            title="حذف نهائي"
                                                                         >
                                                                             <Trash2 size={14} />
+                                                                            حذف
                                                                         </button>
                                                                     </div>
                                                                 </td>
@@ -454,3 +446,4 @@ export const FactoriesPage = () => {
         </div>
     );
 };
+

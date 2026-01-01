@@ -2,12 +2,16 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import type { Factory } from '../../types';
 import { useFactoryStatus } from '../../context/FactoryStatusContext';
-import { Loader2, Mail } from 'lucide-react';
+import { Loader2, Mail, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 
 export const ContactedFactoriesPage = () => {
-    const { } = useFactoryStatus();
+    const { refreshStatuses } = useFactoryStatus();
     const [factories, setFactories] = useState<Factory[]>([]);
     const [loading, setLoading] = useState(true);
+    const [deletingFactory, setDeletingFactory] = useState<Factory | null>(null);
+    const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
+    const [deleteAllConfirm, setDeleteAllConfirm] = useState('');
 
     useEffect(() => {
         fetchFactories();
@@ -16,29 +20,59 @@ export const ContactedFactoriesPage = () => {
     const fetchFactories = async () => {
         setLoading(true);
         try {
-            let result = await supabase
+            // MANDATORY: BIGINT id and factory_status
+            const { data, error } = await supabase
                 .from('factories')
-                .select('id, name, email, city, country, factory_code, industry, status')
-                .neq('status', 'pending');
+                .select('id, name, email, city, country, industry, factory_status, is_contacted')
+                .eq('is_contacted', true)
+                .order('name', { ascending: true });
 
-            if (result.error && result.error.code === '42703') {
-                // Fallback: fetch all and filter by context (legacy/localStorage behavior or local state)
-                const { data, error } = await supabase
-                    .from('factories')
-                    .select('id, name, email, city, country, factory_code, industry');
-                if (error) throw error;
-                // Note: Persistence won't work perfectly if column is missing, 
-                // but at least the page loads.
-                setFactories(data || []);
-            } else if (result.error) {
-                throw result.error;
-            } else {
-                setFactories(result.data || []);
-            }
+            if (error) throw error;
+            setFactories(data || []);
         } catch (err) {
             console.error('Error fetching factories:', err);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleDeleteFactory = async () => {
+        if (!deletingFactory) return;
+
+        try {
+            const { error } = await supabase
+                .from('factories')
+                .delete()
+                .eq('id', deletingFactory.id);
+
+            if (error) throw error;
+
+            setFactories(prev => prev.filter(f => f.id !== deletingFactory.id));
+            setDeletingFactory(null);
+            refreshStatuses();
+        } catch (err) {
+            console.error('Delete error:', err);
+        }
+    };
+
+    const handleDeleteAll = async () => {
+        if (deleteAllConfirm !== 'DELETE ALL') return;
+        try {
+            const idsToDelete = factories.map(f => f.id);
+            if (idsToDelete.length === 0) return;
+
+            const { error } = await supabase
+                .from('factories')
+                .delete()
+                .in('id', idsToDelete);
+
+            if (error) throw error;
+            setFactories([]);
+            setShowDeleteAllDialog(false);
+            setDeleteAllConfirm('');
+            refreshStatuses();
+        } catch (err) {
+            console.error('Delete all error:', err);
         }
     };
 
@@ -63,8 +97,19 @@ export const ContactedFactoriesPage = () => {
                     </h2>
                     <p className="text-gray-500 text-sm mt-1">قائمة بالمصانع التي هي الآن في مرحلة التواصل والمتابعة</p>
                 </div>
-                <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-sm font-bold border border-blue-100">
-                    قيد التواصل: {contactedFactories.length}
+                <div className="flex items-center gap-4">
+                    <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-xl text-sm font-bold border border-blue-100">
+                        قيد التواصل: {contactedFactories.length}
+                    </div>
+                    {contactedFactories.length > 0 && (
+                        <button
+                            onClick={() => setShowDeleteAllDialog(true)}
+                            className="bg-red-50 text-red-600 px-4 py-2 rounded-xl text-sm font-bold hover:bg-red-100 transition-colors flex items-center gap-2"
+                        >
+                            <Trash2 size={16} />
+                            مسح الكل
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -80,11 +125,12 @@ export const ContactedFactoriesPage = () => {
                                     <th className="px-8 py-4">الصناعة</th>
                                     <th className="px-8 py-4">البريد الإلكتروني</th>
                                     <th className="px-8 py-4">الموقع</th>
+                                    <th className="px-8 py-4 text-center">إجراءات</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {contactedFactories.map((f) => (
-                                    <tr key={f.id || f.factory_code} className="hover:bg-gray-50/50 transition-colors">
+                                    <tr key={f.id} className="hover:bg-gray-50/50 transition-colors">
                                         <td className="px-8 py-5">
                                             <div className="font-black text-gray-900">{f.name}</div>
                                         </td>
@@ -99,6 +145,16 @@ export const ContactedFactoriesPage = () => {
                                         </td>
                                         <td className="px-8 py-5 font-bold text-blue-600 text-sm">{f.email || '---'}</td>
                                         <td className="px-8 py-5 font-bold text-gray-500 text-sm">{f.city}, {f.country}</td>
+                                        <td className="px-8 py-5 text-center">
+                                            <button
+                                                onClick={() => setDeletingFactory(f)}
+                                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-50 text-red-600 rounded-lg text-xs font-bold hover:bg-red-100 transition-all shadow-sm"
+                                                title="حذف نهائي"
+                                            >
+                                                <Trash2 size={14} />
+                                                حذف
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -106,6 +162,27 @@ export const ContactedFactoriesPage = () => {
                     </div>
                 )}
             </div>
+
+            <ConfirmDialog
+                isOpen={!!deletingFactory}
+                onClose={() => setDeletingFactory(null)}
+                onConfirm={handleDeleteFactory}
+                title="حذف مصنع"
+                message={`هل أنت متأكد من حذف "${deletingFactory?.name}"؟ سيتم حذفه نهائياً من قاعدة البيانات.`}
+                confirmText="حذف نهائي"
+            />
+
+            <ConfirmDialog
+                isOpen={showDeleteAllDialog}
+                onClose={() => setShowDeleteAllDialog(false)}
+                onConfirm={handleDeleteAll}
+                title="مسح كل المصانع التي تم التواصل معها"
+                message="هل أنت متأكد من مسح جميع هذه المصانع؟ هذا الإجراء لا يمكن التراجع عنه. اكتب DELETE ALL للتأكيد."
+                confirmKeyword="DELETE ALL"
+                confirmText="مسح الكل"
+                keywordValue={deleteAllConfirm}
+                onKeywordChange={setDeleteAllConfirm}
+            />
         </div>
     );
 };

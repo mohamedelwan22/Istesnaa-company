@@ -49,7 +49,7 @@ export const DeduplicationService = {
         if (!factories || factories.length === 0) return [];
 
         const groups: DuplicateGroup[] = [];
-        const processedIds = new Set<string>();
+        const processedIds = new Set<number>();
         const total = factories.length;
 
         // Process in chunks to keep UI responsive
@@ -122,7 +122,7 @@ export const DeduplicationService = {
     /**
      * Merges suspects into a primary factory record
      */
-    async mergeRecords(_primaryId: string, suspectIds: string[]): Promise<void> {
+    async mergeRecords(_primaryId: number, suspectIds: number[]): Promise<void> {
         // In a real production scenario, we might want to consolidate related data (analysis requests, etc.)
         // For now, we delete the redundant records.
         const { error } = await supabase

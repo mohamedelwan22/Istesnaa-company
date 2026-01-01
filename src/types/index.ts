@@ -1,6 +1,5 @@
 export interface Factory {
-    id?: string;
-    factory_code?: string;
+    id: number;
     name?: string;
     email?: string;
     phone?: string;
@@ -14,8 +13,8 @@ export interface Factory {
     created_at?: string;
     batch_id?: string;
     batch_name?: string;
-    approved?: boolean;
-    status?: 'pending' | 'contacted' | 'approved' | 'rejected' | 'certified';
+    is_contacted?: boolean;
+    factory_status?: 'pending' | 'contacted' | 'approved' | 'rejected' | 'certified';
 }
 
 export interface Invention {
@@ -29,9 +28,10 @@ export interface Invention {
     analysis_result?: any;
     created_at: string;
 }
+
 export interface ContactLog {
     id?: string;
-    factory_id: string;
+    factory_id: number;
     factory_name: string;
     email: string;
     industry: string;

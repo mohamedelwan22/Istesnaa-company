@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { Footer } from './Footer';
 import { AnimatePresence, motion } from 'framer-motion';
 
+import { useFactoryStatus } from '../context/FactoryStatusContext';
+
 export const AdminLayout = () => {
     const location = useLocation();
     const navigate = useNavigate();
@@ -27,12 +29,14 @@ export const AdminLayout = () => {
         navigate('/');
     };
 
+    const { contactedCount } = useFactoryStatus();
+
     const navItems = [
         { icon: LayoutDashboard, label: 'لوحة التحكم', path: '/admin/dashboard' },
         { icon: History, label: 'سجل التحليلات', path: '/admin/dashboard/inventions' },
         { icon: Upload, label: 'رفع الملفات', path: '/admin/dashboard/upload' },
         { icon: Users, label: 'إدارة المصانع', path: '/admin/dashboard/factories' },
-        { icon: Mail, label: 'مصانع تم التواصل معها', path: '/admin/dashboard/contacted' },
+        { icon: Mail, label: 'مصانع تم التواصل معها', path: '/admin/dashboard/contacted', badge: contactedCount },
         { icon: MessageSquare, label: 'ردود المصانع', path: '/admin/dashboard/responses' },
         { icon: Star, label: 'المصانع المعتمدة', path: '/admin/dashboard/certified' },
         { icon: CheckCircle, label: 'المصانع المتوافقة', path: '/admin/dashboard/approved' },
@@ -113,7 +117,12 @@ export const AdminLayout = () => {
                                     )}
                                 >
                                     <Icon size={20} />
-                                    <span>{item.label}</span>
+                                    <span className="flex-1">{item.label}</span>
+                                    {item.badge ? (
+                                        <span className="bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold shadow-sm">
+                                            {item.badge}
+                                        </span>
+                                    ) : null}
                                 </Link>
                             );
                         })}

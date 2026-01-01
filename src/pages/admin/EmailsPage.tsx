@@ -10,8 +10,10 @@ import {
     Package, ChevronDown, ChevronUp
 } from 'lucide-react';
 import clsx from 'clsx';
+import { useFactoryStatus } from '../../context/FactoryStatusContext';
 
 export const EmailsPage = () => {
+    const { updateStatus } = useFactoryStatus();
     const [batches, setBatches] = useState<{ id: string, name: string, count: number, loadedFactories?: Factory[] }[]>([]);
     const [loadingBatches, setLoadingBatches] = useState(true);
     const [visibleBatchCount, setVisibleBatchCount] = useState(5);
@@ -100,7 +102,7 @@ export const EmailsPage = () => {
             if (data) {
                 const counts: Record<string, { name: string, count: number }> = {};
                 data.forEach(f => {
-                    const id = f.batch_id || 'no-batch';
+                    const id = f.batch_id ?? 'no-batch';
                     if (!counts[id]) counts[id] = { name: f.batch_name || 'مصانع بدون مجموعة', count: 0 };
                     counts[id].count++;
                 });
@@ -118,9 +120,10 @@ export const EmailsPage = () => {
         if (batches.find(b => b.id === batchId)?.loadedFactories) return;
         setLoadingBatchId(batchId);
         try {
+            // MANDATORY: BIGINT id and factory_status ONLY
             let query = supabase
                 .from('factories')
-                .select('id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code');
+                .select('id, name, email, industry, city, country, batch_id, batch_name, factory_status, is_contacted');
 
             if (batchId === 'no-batch') {
                 query = query.is('batch_id', null);
@@ -131,7 +134,7 @@ export const EmailsPage = () => {
             const { data, error } = await query.order('name', { ascending: true });
 
             if (error) throw error;
-            setBatches(prev => prev.map(b => b.id === batchId ? { ...b, loadedFactories: data || [] } : b));
+            setBatches(prev => prev.map(b => b.id === batchId ? { ...b, loadedFactories: (data as any) || [] } : b));
         } catch (err) {
             console.error('Error fetching factories:', err);
         } finally {
@@ -151,15 +154,21 @@ export const EmailsPage = () => {
     const visibleBatches = filteredBatches.slice(0, visibleBatchCount);
     const hasMoreBatches = visibleBatches.length < filteredBatches.length;
 
-    const toggleBatchExpand = async (batchId: string) => {
-        const newExpanded = new Set(expandedBatches);
-        if (newExpanded.has(batchId)) {
-            newExpanded.delete(batchId);
-        } else {
-            newExpanded.add(batchId);
-            await fetchFactoriesInBatch(batchId);
-        }
-        setExpandedBatches(newExpanded);
+    const toggleBatchExpand = (batchId: string) => {
+        setExpandedBatches(prev => {
+            const next = new Set(prev);
+            const expanding = !next.has(batchId);
+            if (!expanding) {
+                next.delete(batchId);
+            } else {
+                next.add(batchId);
+                // Trigger fetch if not already loaded
+                if (!batches.find(b => String(b.id) === String(batchId))?.loadedFactories) {
+                    fetchFactoriesInBatch(batchId);
+                }
+            }
+            return next;
+        });
     };
 
     const handleLoadMoreBatches = () => {
@@ -182,8 +191,8 @@ export const EmailsPage = () => {
         }
 
         // Log the effort (Asynchronously - do not await)
-        const newLog: ContactLog = {
-            factory_id: factory.id || 'unknown',
+        const newLog: Partial<ContactLog> = {
+            factory_id: factory.id,
             factory_name: factory.name || 'غير مسمى',
             email: factory.email || 'no-email',
             industry: factory.industry?.[0] || 'عام',
@@ -196,10 +205,15 @@ export const EmailsPage = () => {
                 if (!error && data && data[0]) {
                     setContactLogs(prev => [data[0], ...prev]);
                 } else {
-                    setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
+                    setContactLogs(prev => [{ ...newLog, id: Math.random().toString() } as ContactLog, ...prev]);
                 }
             })
             .catch((err: unknown) => console.error('Logging failed:', err));
+
+        // Update status to 'pending' -> 'is_contacted' = true immediately
+        if (factory.id) {
+            updateStatus(factory.id, 'pending', { is_contacted: true });
+        }
     };
 
     const [selectedIndustry, setSelectedIndustry] = useState<string>('all');
@@ -300,7 +314,7 @@ export const EmailsPage = () => {
 
         const factory = sendingQueue[queueIndex];
 
-        if (!skip) {
+        if (!skip && factory.id) {
             const tokenizedSubject = tokenize(emailTemplate.subject, factory);
             const tokenizedBody = tokenize(emailTemplate.body, factory, attachmentLinks);
 
@@ -317,8 +331,8 @@ export const EmailsPage = () => {
             }
 
             // LOG ASYNCHRONOUSLY
-            const newLog: ContactLog = {
-                factory_id: factory.id || 'unknown',
+            const newLog: Partial<ContactLog> = {
+                factory_id: factory.id,
                 factory_name: factory.name || 'غير مسمى',
                 email: factory.email || 'no-email',
                 industry: factory.industry?.[0] || 'عام',
@@ -331,10 +345,13 @@ export const EmailsPage = () => {
                     if (!error && data && data[0]) {
                         setContactLogs(prev => [data[0], ...prev]);
                     } else {
-                        setContactLogs(prev => [{ ...newLog, id: Math.random().toString() }, ...prev]);
+                        setContactLogs(prev => [{ ...newLog, id: Math.random().toString() } as ContactLog, ...prev]);
                     }
                 })
                 .catch((err: unknown) => console.error('Logging failed:', err));
+
+            // Update status to 'pending' -> 'is_contacted' = true immediately
+            updateStatus(factory.id, 'pending', { is_contacted: true });
         }
 
         const nextIndex = queueIndex + 1;
