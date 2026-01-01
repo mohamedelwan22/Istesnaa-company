@@ -5,7 +5,7 @@ import { useFactoryStatus } from '../../context/FactoryStatusContext';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 export const FactoryResponsesPage = () => {
-    const { factoryStatuses } = useFactoryStatus();
+    const { } = useFactoryStatus();
     const [factories, setFactories] = useState<Factory[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -18,7 +18,8 @@ export const FactoryResponsesPage = () => {
         try {
             const { data, error } = await supabase
                 .from('factories')
-                .select('id, name, email, city, country, factory_code');
+                .select('id, name, email, city, country, factory_code, status')
+                .in('status', ['approved', 'rejected']);
 
             if (error) throw error;
             setFactories(data || []);
@@ -29,8 +30,8 @@ export const FactoryResponsesPage = () => {
         }
     };
 
-    const approvedFactories = factories.filter(f => factoryStatuses[f.id || f.factory_code || ''] === 'approved');
-    const rejectedFactories = factories.filter(f => factoryStatuses[f.id || f.factory_code || ''] === 'rejected');
+    const approvedFactories = factories.filter(f => f.status === 'approved');
+    const rejectedFactories = factories.filter(f => f.status === 'rejected');
 
     if (loading) {
         return (

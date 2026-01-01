@@ -71,7 +71,7 @@ export const FactoriesPage = () => {
         try {
             let query = supabase
                 .from('factories')
-                .select('id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code, created_at');
+                .select('id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code, status, created_at');
 
             if (batchId === 'no-batch') {
                 query = query.is('batch_id', null);
@@ -291,7 +291,7 @@ export const FactoriesPage = () => {
                                                                 </td>
                                                                 <td className="px-8 py-5">
                                                                     {(() => {
-                                                                        const status = getStatus(factory.id || factory.factory_code || '');
+                                                                        const status = factory.status || getStatus(factory.id || factory.factory_code || '');
                                                                         switch (status) {
                                                                             case 'contacted': return <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs font-bold">قيد التواصل</span>;
                                                                             case 'approved': return <span className="bg-green-100 text-green-700 px-2 py-1 rounded-md text-xs font-bold">موافق ✅</span>;
@@ -306,7 +306,7 @@ export const FactoriesPage = () => {
                                                                     <div className="flex items-center justify-center gap-2">
                                                                         {(() => {
                                                                             const id = factory.id || factory.factory_code || '';
-                                                                            const status = getStatus(id);
+                                                                            const status = factory.status || getStatus(id);
                                                                             if (status === 'pending') {
                                                                                 return (
                                                                                     <button

@@ -5,7 +5,7 @@ import { useFactoryStatus } from '../../context/FactoryStatusContext';
 import { Loader2, Star } from 'lucide-react';
 
 export const CertifiedFactoriesPage = () => {
-    const { factoryStatuses } = useFactoryStatus();
+    const { } = useFactoryStatus();
     const [factories, setFactories] = useState<Factory[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -18,7 +18,8 @@ export const CertifiedFactoriesPage = () => {
         try {
             const { data, error } = await supabase
                 .from('factories')
-                .select('id, name, email, city, country, factory_code, industry');
+                .select('id, name, email, city, country, factory_code, industry, status')
+                .eq('status', 'certified');
 
             if (error) throw error;
             setFactories(data || []);
@@ -29,7 +30,7 @@ export const CertifiedFactoriesPage = () => {
         }
     };
 
-    const certifiedFactories = factories.filter(f => factoryStatuses[f.id || f.factory_code || ''] === 'certified');
+    const certifiedFactories = factories;
 
     if (loading) {
         return (

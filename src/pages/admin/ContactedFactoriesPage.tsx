@@ -5,7 +5,7 @@ import { useFactoryStatus } from '../../context/FactoryStatusContext';
 import { Loader2, Mail } from 'lucide-react';
 
 export const ContactedFactoriesPage = () => {
-    const { factoryStatuses } = useFactoryStatus();
+    const { } = useFactoryStatus();
     const [factories, setFactories] = useState<Factory[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -18,7 +18,8 @@ export const ContactedFactoriesPage = () => {
         try {
             const { data, error } = await supabase
                 .from('factories')
-                .select('id, name, email, city, country, factory_code, industry');
+                .select('id, name, email, city, country, factory_code, industry, status')
+                .neq('status', 'pending');
 
             if (error) throw error;
             setFactories(data || []);
@@ -29,7 +30,7 @@ export const ContactedFactoriesPage = () => {
         }
     };
 
-    const contactedFactories = factories.filter(f => factoryStatuses[f.id || f.factory_code || ''] === 'contacted');
+    const contactedFactories = factories;
 
     if (loading) {
         return (

@@ -1,32 +1,72 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
 
 export type FactoryStatus = 'pending' | 'contacted' | 'approved' | 'rejected' | 'certified';
 
 interface FactoryStatusContextType {
     factoryStatuses: Record<string, FactoryStatus>;
-    updateStatus: (factoryId: string, status: FactoryStatus) => void;
+    updateStatus: (factoryId: string, status: FactoryStatus) => Promise<void>;
     getStatus: (factoryId: string) => FactoryStatus;
+    refreshStatuses: () => Promise<void>;
 }
 
 const FactoryStatusContext = createContext<FactoryStatusContextType | undefined>(undefined);
 
-const STORAGE_KEY = 'estesnaa_factory_statuses';
-
 export const FactoryStatusProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [factoryStatuses, setFactoryStatuses] = useState<Record<string, FactoryStatus>>(() => {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        return saved ? JSON.parse(saved) : {};
-    });
+    const [factoryStatuses, setFactoryStatuses] = useState<Record<string, FactoryStatus>>({});
+
+    const refreshStatuses = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('factories')
+                .select('id, factory_code, status');
+
+            if (error) throw error;
+
+            const statuses: Record<string, FactoryStatus> = {};
+            data?.forEach(f => {
+                const id = f.id || f.factory_code;
+                if (id) {
+                    statuses[id] = (f.status as FactoryStatus) || 'pending';
+                }
+            });
+            setFactoryStatuses(statuses);
+        } catch (err) {
+            console.error('Error refreshing statuses:', err);
+        }
+    };
 
     useEffect(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(factoryStatuses));
-    }, [factoryStatuses]);
+        refreshStatuses();
+    }, []);
 
-    const updateStatus = (factoryId: string, status: FactoryStatus) => {
-        setFactoryStatuses(prev => ({
-            ...prev,
-            [factoryId]: status
-        }));
+    const updateStatus = async (factoryId: string, status: FactoryStatus) => {
+        try {
+            // First update local state for immediate UI feedback
+            setFactoryStatuses(prev => ({
+                ...prev,
+                [factoryId]: status
+            }));
+
+            // Then persist to database
+            // We check both id (UUID) and factory_code to be safe, depending on what was passed
+            let query = supabase.from('factories').update({ status });
+
+            if (factoryId.includes('-')) {
+                // Likely a UUID
+                query = query.eq('id', factoryId);
+            } else {
+                // Likely a factory_code
+                query = query.eq('factory_code', factoryId);
+            }
+
+            const { error } = await query;
+            if (error) throw error;
+        } catch (err) {
+            console.error('Error updating status:', err);
+            // Revert local state on error
+            refreshStatuses();
+        }
     };
 
     const getStatus = (factoryId: string): FactoryStatus => {
@@ -34,7 +74,7 @@ export const FactoryStatusProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     return (
-        <FactoryStatusContext.Provider value={{ factoryStatuses, updateStatus, getStatus }}>
+        <FactoryStatusContext.Provider value={{ factoryStatuses, updateStatus, getStatus, refreshStatuses }}>
             {children}
         </FactoryStatusContext.Provider>
     );

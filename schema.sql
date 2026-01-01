@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS factories (
     scale TEXT,
     notes TEXT,
     approved BOOLEAN DEFAULT FALSE,
+    status TEXT DEFAULT 'pending',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
