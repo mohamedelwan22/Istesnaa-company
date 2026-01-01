@@ -16,13 +16,25 @@ export const ContactedFactoriesPage = () => {
     const fetchFactories = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            let result = await supabase
                 .from('factories')
                 .select('id, name, email, city, country, factory_code, industry, status')
                 .neq('status', 'pending');
 
-            if (error) throw error;
-            setFactories(data || []);
+            if (result.error && result.error.code === '42703') {
+                // Fallback: fetch all and filter by context (legacy/localStorage behavior or local state)
+                const { data, error } = await supabase
+                    .from('factories')
+                    .select('id, name, email, city, country, factory_code, industry');
+                if (error) throw error;
+                // Note: Persistence won't work perfectly if column is missing, 
+                // but at least the page loads.
+                setFactories(data || []);
+            } else if (result.error) {
+                throw result.error;
+            } else {
+                setFactories(result.data || []);
+            }
         } catch (err) {
             console.error('Error fetching factories:', err);
         } finally {

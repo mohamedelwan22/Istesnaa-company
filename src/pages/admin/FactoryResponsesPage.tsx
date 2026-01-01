@@ -16,13 +16,22 @@ export const FactoryResponsesPage = () => {
     const fetchFactories = async () => {
         setLoading(true);
         try {
-            const { data, error } = await supabase
+            let result = await supabase
                 .from('factories')
                 .select('id, name, email, city, country, factory_code, status')
                 .in('status', ['approved', 'rejected']);
 
-            if (error) throw error;
-            setFactories(data || []);
+            if (result.error && result.error.code === '42703') {
+                const { data, error } = await supabase
+                    .from('factories')
+                    .select('id, name, email, city, country, factory_code');
+                if (error) throw error;
+                setFactories(data || []);
+            } else if (result.error) {
+                throw result.error;
+            } else {
+                setFactories(result.data || []);
+            }
         } catch (err) {
             console.error('Error fetching factories:', err);
         } finally {

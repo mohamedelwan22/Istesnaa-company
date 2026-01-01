@@ -21,7 +21,13 @@ export const FactoryStatusProvider: React.FC<{ children: React.ReactNode }> = ({
                 .from('factories')
                 .select('id, factory_code, status');
 
-            if (error) throw error;
+            if (error) {
+                if (error.code === '42703') {
+                    console.warn('Status column does not exist yet. Please run the SQL migration.');
+                    return;
+                }
+                throw error;
+            }
 
             const statuses: Record<string, FactoryStatus> = {};
             data?.forEach(f => {

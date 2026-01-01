@@ -17,7 +17,7 @@ async function test() {
     try {
         const { data, error } = await supabase
             .from('factories')
-            .select('id, factory_code, name, city, industry, country, email, phone')
+            .select('id, factory_code, name, city, industry, country, email, phone, status')
             .order('created_at', { ascending: false })
             .limit(5);
 

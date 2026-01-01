@@ -69,9 +69,11 @@ export const FactoriesPage = () => {
 
         setLoadingBatchId(batchId);
         try {
+            const columns = 'id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code, status, created_at';
+
             let query = supabase
                 .from('factories')
-                .select('id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code, status, created_at');
+                .select(columns);
 
             if (batchId === 'no-batch') {
                 query = query.is('batch_id', null);
@@ -79,12 +81,26 @@ export const FactoriesPage = () => {
                 query = query.eq('batch_id', batchId);
             }
 
-            const { data, error } = await query.order('name', { ascending: true });
+            let { data, error } = await query.order('name', { ascending: true });
+
+            if (error && error.code === '42703') {
+                // Column 'status' doesn't exist, retry without it
+                const fallbackColumns = 'id, name, email, industry, city, country, batch_id, batch_name, approved, factory_code, created_at';
+                let fallbackQuery = supabase.from('factories').select(fallbackColumns);
+                if (batchId === 'no-batch') {
+                    fallbackQuery = fallbackQuery.is('batch_id', null);
+                } else {
+                    fallbackQuery = fallbackQuery.eq('batch_id', batchId);
+                }
+                const fallbackResult = await fallbackQuery.order('name', { ascending: true });
+                data = fallbackResult.data as any; // Cast to avoid strict status requirement
+                error = fallbackResult.error;
+            }
 
             if (error) throw error;
 
             setBatches(prev => prev.map(b =>
-                b.id === batchId ? { ...b, loadedFactories: data || [] } : b
+                b.id === batchId ? { ...b, loadedFactories: (data as any) || [] } : b
             ));
         } catch (err) {
             console.error('Error fetching factories for batch:', err);
