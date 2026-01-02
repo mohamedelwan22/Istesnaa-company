@@ -14,7 +14,7 @@ interface CampaignPreviewModalProps {
     emailSubject: string;
     emailBody: string;
     onConfirmSend: (mode: 'bulk' | 'sequential') => void;
-    onRemoveRecipient: (id: string) => void;
+    onRemoveRecipient: (id: number) => void;
     onSubjectChange: (val: string) => void;
     onBodyChange: (val: string) => void;
 }

@@ -61,33 +61,25 @@ export const FactoryFormModal = ({ isOpen, onClose, onSuccess, factory, batches 
             const { id, created_at, ...updateData } = formData;
 
             // Determine if it's an update or insert
-            const isUpdate = !!factory?.id || !!factory?.factory_code;
+            const isUpdate = !!factory?.id;
             let savedFactory: Factory;
 
-            if (isUpdate) {
+            if (isUpdate && factory?.id) {
                 // Update existing record
-                let query = supabase.from('factories').update(updateData);
+                const { data, error: updateError } = await supabase
+                    .from('factories')
+                    .update(updateData)
+                    .eq('id', factory.id)
+                    .select()
+                    .single();
 
-                if (factory?.id) {
-                    query = query.eq('id', factory.id);
-                } else if (factory?.factory_code) {
-                    query = query.eq('factory_code', factory.factory_code);
-                }
-
-                const { data, error: updateError } = await query.select().single();
                 if (updateError) throw updateError;
                 savedFactory = data;
             } else {
                 // Insert new factory
-                // Generate a factory_code if missing
-                const insertData = {
-                    ...formData,
-                    factory_code: formData.factory_code || crypto.randomUUID()
-                };
-
                 const { data, error: insertError } = await supabase
                     .from('factories')
-                    .insert([insertData])
+                    .insert([formData])
                     .select()
                     .single();
 

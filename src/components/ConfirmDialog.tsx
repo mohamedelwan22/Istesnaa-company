@@ -12,6 +12,10 @@ interface ConfirmDialogProps {
     confirmButtonClass?: string;
     requireTextConfirmation?: boolean;
     confirmationText?: string;
+    // New props for external management
+    confirmKeyword?: string;
+    keywordValue?: string;
+    onKeywordChange?: (val: string) => void;
 }
 
 export const ConfirmDialog = ({
@@ -23,19 +27,29 @@ export const ConfirmDialog = ({
     confirmText = 'تأكيد',
     confirmButtonClass = 'bg-red-600 hover:bg-red-700',
     requireTextConfirmation = false,
-    confirmationText = ''
+    confirmationText = '',
+    confirmKeyword,
+    keywordValue,
+    onKeywordChange
 }: ConfirmDialogProps) => {
-    const [inputValue, setInputValue] = useState('');
+    const [internalInputValue, setInternalInputValue] = useState('');
+
+    const activeKeyword = confirmKeyword || confirmationText;
+    const isRequired = requireTextConfirmation || !!confirmKeyword;
+
+    // Use controlled value if onKeywordChange is provided, otherwise use internal state
+    const currentValue = onKeywordChange ? (keywordValue || '') : internalInputValue;
+    const setCurrentValue = onKeywordChange ? onKeywordChange : setInternalInputValue;
 
     const handleConfirm = () => {
-        if (requireTextConfirmation && inputValue !== confirmationText) {
+        if (isRequired && currentValue !== activeKeyword) {
             return;
         }
         onConfirm();
-        setInputValue('');
+        if (!onKeywordChange) setInternalInputValue('');
     };
 
-    const canConfirm = !requireTextConfirmation || inputValue === confirmationText;
+    const canConfirm = !isRequired || currentValue === activeKeyword;
 
     return (
         <Modal isOpen={isOpen} onClose={onClose} title={title}>
@@ -45,17 +59,17 @@ export const ConfirmDialog = ({
                     <p className="text-gray-700">{message}</p>
                 </div>
 
-                {requireTextConfirmation && (
+                {isRequired && (
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            اكتب "{confirmationText}" للتأكيد:
+                            اكتب "{activeKeyword}" للتأكيد:
                         </label>
                         <input
                             type="text"
-                            value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
+                            value={currentValue}
+                            onChange={(e) => setCurrentValue(e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                            placeholder={confirmationText}
+                            placeholder={activeKeyword}
                         />
                     </div>
                 )}

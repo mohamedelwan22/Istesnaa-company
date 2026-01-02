@@ -80,8 +80,8 @@ export const EmailsPage = () => {
             console.error('Error fetching logs:', error);
             // Fallback for simulation/local if table doesn't exist
             const mockLogs: ContactLog[] = [
-                { id: 'mock-01', factory_id: 'mock-1', factory_name: 'مصنع الأمل للبلاستيك', email: 'hope@factory.com', industry: 'البلاستيك', sent_at: new Date().toISOString(), status: 'Sent' },
-                { id: 'mock-02', factory_id: 'mock-2', factory_name: 'شركة الصناعات المعدنية', email: 'metal@co.com', industry: 'المعادن', sent_at: new Date().toISOString(), status: 'Sent' }
+                { id: 'mock-01', factory_id: 1, factory_name: 'مصنع الأمل للبلاستيك', email: 'hope@factory.com', industry: 'البلاستيك', sent_at: new Date().toISOString(), status: 'Sent' },
+                { id: 'mock-02', factory_id: 2, factory_name: 'شركة الصناعات المعدنية', email: 'metal@co.com', industry: 'المعادن', sent_at: new Date().toISOString(), status: 'Sent' }
             ];
             setContactLogs(mockLogs);
         }
